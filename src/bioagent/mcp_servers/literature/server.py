@@ -6,11 +6,12 @@ Every tool returns retrieved third-party paper text marked ``untrusted_text: tru
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 
 from mcp.server.mcpserver import MCPServer
 
+from bioagent.common.httpclient import RateLimitedClient, quiet_http_logging
+from bioagent.common.tools import tool_errors
 from bioagent.config import Settings, get_settings
 from bioagent.mcp_servers.literature.europepmc import (
     EUROPEPMC_HOST,
@@ -18,7 +19,6 @@ from bioagent.mcp_servers.literature.europepmc import (
     MAX_PAGE_SIZE,
     EuropePMCClient,
 )
-from bioagent.mcp_servers.literature.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature.models import UNTRUSTED_NOTICE, PagedResults
 from bioagent.mcp_servers.literature.pubmed import (
     EUTILS_HOST,
@@ -30,9 +30,7 @@ from bioagent.mcp_servers.literature.pubmed import (
 
 MAX_SEARCH_RESULTS = 100
 
-# httpx logs full request URLs (including api_key) at INFO; keep it quiet.
-for _name in ("httpx", "httpcore"):
-    logging.getLogger(_name).setLevel(logging.WARNING)
+quiet_http_logging()
 
 
 @dataclass
@@ -81,6 +79,7 @@ mcp = MCPServer(
 
 
 @mcp.tool()
+@tool_errors
 async def search_pubmed(
     query: str,
     max_results: int = 10,
@@ -103,6 +102,7 @@ async def search_pubmed(
 
 
 @mcp.tool()
+@tool_errors
 async def fetch_pubmed(pmids: list[str]) -> PagedResults:
     """Fetch full PubMed records for up to 200 PMIDs.
 
@@ -116,6 +116,7 @@ async def fetch_pubmed(pmids: list[str]) -> PagedResults:
 
 
 @mcp.tool()
+@tool_errors
 async def search_europepmc(
     query: str, page_size: int = 25, page_token: str | None = None
 ) -> PagedResults:

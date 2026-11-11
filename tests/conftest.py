@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
+from bioagent.common.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature.europepmc import EuropePMCClient
-from bioagent.mcp_servers.literature.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature.pubmed import PubMedClient
 
 FIXTURES = Path(__file__).parent / "fixtures"

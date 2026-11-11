@@ -4,7 +4,7 @@ import httpx
 import pytest
 import respx
 
-from bioagent.mcp_servers.literature.httpclient import (
+from bioagent.common.httpclient import (
     LiteratureAPIError,
     RateLimitedClient,
     parse_retry_after,

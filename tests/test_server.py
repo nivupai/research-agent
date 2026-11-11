@@ -5,10 +5,11 @@ from collections.abc import Iterator
 import httpx
 import pytest
 import respx
+from mcp.server.mcpserver.exceptions import ToolError
 
+from bioagent.common.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature import server
 from bioagent.mcp_servers.literature.europepmc import EuropePMCClient
-from bioagent.mcp_servers.literature.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature.pubmed import EUTILS_BASE, PubMedClient
 
 
@@ -41,5 +42,11 @@ async def test_fetch_pubmed_tool(efetch_xml: bytes) -> None:
 
 
 async def test_fetch_pubmed_rejects_too_many() -> None:
-    with pytest.raises(ValueError, match="at most 200"):
+    with pytest.raises(ToolError, match="at most 200"):
         await server.fetch_pubmed([str(i) for i in range(1, 300)])
+
+
+async def test_error_message_reaches_client() -> None:
+    # MCP turns ToolError into an is_error result carrying this message.
+    with pytest.raises(ToolError, match="invalid PMIDs"):
+        await server.mcp.call_tool("fetch_pubmed", {"pmids": ["12", "abc"]})

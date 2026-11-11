@@ -110,7 +110,7 @@ async def test_esearch_paging(pubmed: PubMedClient, efetch_xml: bytes) -> None:
 
 @respx.mock
 async def test_search_without_api_key_omits_it(http: object, efetch_xml: bytes) -> None:
-    from bioagent.mcp_servers.literature.httpclient import RateLimitedClient
+    from bioagent.common.httpclient import RateLimitedClient
 
     assert isinstance(http, RateLimitedClient)
     client = PubMedClient(http)

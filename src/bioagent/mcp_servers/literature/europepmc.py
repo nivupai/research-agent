@@ -6,7 +6,7 @@ import html
 import re
 from typing import Any
 
-from bioagent.mcp_servers.literature.httpclient import RateLimitedClient
+from bioagent.common.httpclient import RateLimitedClient
 from bioagent.mcp_servers.literature.models import AbstractSection, PagedResults, PaperRecord
 
 EUROPEPMC_BASE = "https://www.ebi.ac.uk/europepmc/webservices/rest"

@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from bioagent.mcp_servers.literature.ratelimit import TokenBucket
+from bioagent.common.ratelimit import TokenBucket
 
 
 async def test_bucket_spaces_requests() -> None:
