@@ -1,0 +1,58 @@
+<?xml version="1.0" ?>
+<!DOCTYPE PubmedArticleSet PUBLIC "-//NLM//DTD PubMedArticle, 1st January 2024//EN" "https://dtd.nlm.nih.gov/ncbi/pubmed/out/pubmed_240101.dtd">
+<PubmedArticleSet>
+  <PubmedArticle>
+    <MedlineCitation Status="MEDLINE" Owner="NLM">
+      <PMID Version="1">11111111</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Internet">
+            <PubDate><Year>2021</Year><Month>Mar</Month></PubDate>
+          </JournalIssue>
+          <Title>Journal of Neuro-Oncology</Title>
+        </Journal>
+        <ArticleTitle>Metformin and <i>glioblastoma</i> survival: a cohort study.</ArticleTitle>
+        <ELocationID EIdType="doi" ValidYN="Y">10.1000/elocation-doi</ELocationID>
+        <Abstract>
+          <AbstractText Label="BACKGROUND" NlmCategory="BACKGROUND">Metformin may affect tumour growth.</AbstractText>
+          <AbstractText Label="METHODS" NlmCategory="METHODS">We analysed 500 patients.</AbstractText>
+          <AbstractText Label="RESULTS" NlmCategory="RESULTS">Median survival improved (HR 0.8).</AbstractText>
+        </Abstract>
+        <AuthorList CompleteYN="Y">
+          <Author ValidYN="Y"><LastName>Smith</LastName><ForeName>Jane A</ForeName><Initials>JA</Initials></Author>
+          <Author ValidYN="Y"><LastName>Doe</LastName><Initials>J</Initials></Author>
+          <Author ValidYN="Y"><CollectiveName>Glioma Consortium</CollectiveName></Author>
+        </AuthorList>
+      </Article>
+      <MeshHeadingList>
+        <MeshHeading><DescriptorName UI="D005909" MajorTopicYN="N">Glioblastoma</DescriptorName></MeshHeading>
+        <MeshHeading><DescriptorName UI="D008687" MajorTopicYN="Y">Metformin</DescriptorName></MeshHeading>
+      </MeshHeadingList>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList>
+        <ArticleId IdType="pubmed">11111111</ArticleId>
+        <ArticleId IdType="doi">10.1000/test.2021.1</ArticleId>
+        <ArticleId IdType="pmc">PMC1234567</ArticleId>
+      </ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+  <PubmedArticle>
+    <MedlineCitation Status="PubMed-not-MEDLINE" Owner="NLM">
+      <PMID Version="1">22222222</PMID>
+      <Article PubModel="Print">
+        <Journal>
+          <JournalIssue CitedMedium="Print">
+            <PubDate><MedlineDate>1998 Jan-Feb</MedlineDate></PubDate>
+          </JournalIssue>
+          <Title>Old Letters Journal</Title>
+        </Journal>
+        <ArticleTitle>A letter without an abstract.</ArticleTitle>
+        <AuthorList><Author><LastName>Brown</LastName><ForeName>Bob</ForeName></Author></AuthorList>
+      </Article>
+    </MedlineCitation>
+    <PubmedData>
+      <ArticleIdList><ArticleId IdType="pubmed">22222222</ArticleId></ArticleIdList>
+    </PubmedData>
+  </PubmedArticle>
+</PubmedArticleSet>
