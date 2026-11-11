@@ -19,6 +19,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
 
+    # Sandboxed code execution (see bioagent.mcp_servers.sandbox)
+    sandbox_image: str = "bioagent-sandbox:latest"
+    sandbox_mem: str = "512m"
+    sandbox_cpus: float = 1.0
+    sandbox_timeout_max: int = 120
+    sandbox_pids: int = 128
+    docker_host: str | None = None
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:

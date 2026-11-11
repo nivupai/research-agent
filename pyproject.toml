@@ -10,11 +10,13 @@ dependencies = [
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
     "rdkit>=2026.9.2",
+    "docker>=7.2.0",
 ]
 
 [project.scripts]
 bioagent-literature = "bioagent.mcp_servers.literature.__main__:main"
 bioagent-chemistry = "bioagent.mcp_servers.chemistry.__main__:main"
+bioagent-sandbox = "bioagent.mcp_servers.sandbox.__main__:main"
 
 [dependency-groups]
 dev = [
@@ -24,6 +26,8 @@ dev = [
     "pytest-asyncio>=0.23",
     "respx>=0.21",
     "pre-commit>=3.7",
+    "types-docker>=7.2.0.20261102",
+    "types-requests>=2.33.0.20261030",
 ]
 
 [build-system]
@@ -56,5 +60,8 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["live: hits real external APIs (deselect with -m 'not live')"]
-addopts = "-m 'not live'"
+markers = [
+    "live: hits real external APIs (deselect with -m 'not live')",
+    "docker: needs a local Docker daemon and the sandbox image (make sandbox-image)",
+]
+addopts = "-m 'not live and not docker'"
