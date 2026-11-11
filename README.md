@@ -46,10 +46,25 @@ Example MCP client config:
 All paper text returned by the server is marked `untrusted_text: true`: it is retrieved data and
 must never be treated as instructions by an agent.
 
+## Chemistry MCP server
+
+RDKit-based tools: `molecular_properties` (SMILES or a compound name, resolved via PubChem),
+`drug_likeness` (Lipinski, Veber, Ghose, PAINS/Brenk alerts, CNS MPO, BBB heuristic),
+`similarity` (Morgan2/MACCS fingerprints, Tanimoto/Dice), `substructure_search` (SMARTS) and
+`resolve_name` (PubChem PUG-REST, 5 req/s).
+
+```bash
+make serve-chemistry           # or: uv run bioagent-chemistry
+```
+
+All scores are computed estimates from 2D structure, not experimental evidence. The CNS MPO
+score approximates ClogD with cLogP and omits the pKa term (reported out of 5, not 6).
+
 ## Development
 
 ```bash
 make lint        # ruff check, ruff format --check, mypy
 make test        # unit tests (network mocked with respx)
-make test-live   # tests that hit the real PubMed / Europe PMC APIs
+make test-live   # tests that hit the real PubMed / Europe PMC / PubChem APIs
+make smoke       # launch each MCP server over stdio and call every tool
 ```

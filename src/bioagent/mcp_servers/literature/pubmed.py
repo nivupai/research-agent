@@ -9,7 +9,7 @@ import xml.etree.ElementTree as ET
 from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
-from bioagent.mcp_servers.literature.httpclient import LiteratureAPIError, RateLimitedClient
+from bioagent.common.httpclient import LiteratureAPIError, RateLimitedClient
 from bioagent.mcp_servers.literature.models import AbstractSection, PagedResults, PaperRecord
 
 EUTILS_BASE = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils"
