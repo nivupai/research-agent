@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live serve-literature smoke
+.PHONY: install lint format test test-live serve-literature serve-chemistry smoke
 
 install:
 	uv sync
@@ -22,5 +22,9 @@ test-live:
 serve-literature:
 	uv run python -m bioagent.mcp_servers.literature
 
+serve-chemistry:
+	uv run python -m bioagent.mcp_servers.chemistry
+
 smoke:
 	uv run python scripts/smoke_literature.py
+	uv run python scripts/smoke_chemistry.py

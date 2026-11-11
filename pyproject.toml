@@ -9,10 +9,12 @@ dependencies = [
     "httpx>=0.27",
     "pydantic>=2.6",
     "pydantic-settings>=2.2",
+    "rdkit>=2026.9.2",
 ]
 
 [project.scripts]
 bioagent-literature = "bioagent.mcp_servers.literature.__main__:main"
+bioagent-chemistry = "bioagent.mcp_servers.chemistry.__main__:main"
 
 [dependency-groups]
 dev = [

@@ -36,3 +36,15 @@ async def test_live_europepmc_search() -> None:
         assert any(r.abstract for r in page.items)
     finally:
         await clients.http.aclose()
+
+
+async def test_live_pubchem_resolve_metformin() -> None:
+    from bioagent.mcp_servers.chemistry.server import ChemistryClients
+
+    clients = ChemistryClients.create()
+    try:
+        resolved = await clients.pubchem.resolve_name("metformin")
+        assert resolved.cid == 4091
+        assert resolved.canonical_smiles == "CN(C)C(=N)N=C(N)N"
+    finally:
+        await clients.http.aclose()
