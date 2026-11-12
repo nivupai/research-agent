@@ -24,5 +24,5 @@ jobs:
         run: uv run ruff format --check .
       - name: Mypy
         run: uv run mypy
-      - name: Unit tests (live, docker, model and LLM tests excluded)
-        run: uv run pytest -m "not live and not docker and not models and not llm"
+      - name: Unit tests (live, docker, model, LLM and Neo4j tests excluded)
+        run: uv run pytest -m "not live and not docker and not models and not llm and not neo4j"

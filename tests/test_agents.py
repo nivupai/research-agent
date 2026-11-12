@@ -16,12 +16,14 @@ from bioagent.agents.nodes import (
     RoleModel,
     map_citations,
     ready_tasks,
+    select_evidence,
     split_sentences,
     verifier,
 )
 from bioagent.agents.runner import ask, execute
 from bioagent.agents.state import Evidence, Plan
 from bioagent.agents.tools import (
+    GRAPH_TOOLS,
     TOOL_SCOPES,
     StaticToolProvider,
     extract_evidence,
@@ -32,6 +34,7 @@ from bioagent.cli import format_report
 from bioagent.config import Settings
 from bioagent.llm.providers import ModelSpec, RoleModels
 from tests.agent_fakes import (
+    GRAPH_DRUGS_RESULT,
     FakeChatModel,
     ToolLog,
     call,
@@ -155,7 +158,75 @@ def test_tool_scopes_are_disjoint_and_static_provider_filters() -> None:
     provider = StaticToolProvider(fake_tools(ToolLog()))
     assert {t.name for t in provider.tools_for("literature")} == lit
     assert {t.name for t in provider.tools_for("analysis")} == {"run_python"}
-    assert provider.tools_for("graph") == []  # graph_query hook not implemented yet
+    assert {t.name for t in provider.tools_for("graph")} == set(GRAPH_TOOLS)
+    assert set(GRAPH_TOOLS) <= lit  # the literature specialist owns the graph tools
+
+
+def test_graph_evidence_cites_pmids_and_chembl() -> None:
+    items = extract_evidence("drugs_targeting", GRAPH_DRUGS_RESULT, "t1")
+    by_source = {e["source"]: e for e in items}
+    lit = [e for e in items if e["source"] == "graph"]
+    assert [e["pmid"] for e in lit] == ["111", "222"]
+    assert lit[0]["title"] == "Metformin activates AMPK" and lit[0]["untrusted"]
+    assert "Metformin stimulates PRKAA2" in lit[0]["text"] and not lit[0]["computed"]
+    chembl = by_source["chembl"]
+    assert chembl["pmid"] is None and chembl["passage_id"] == "CHEMBL483849"
+    assert "ACTIVATOR" in chembl["text"] and "not approved" in chembl["text"]
+    rendered = render_for_model("drugs_targeting", GRAPH_DRUGS_RESULT, items)
+    assert "PMID 111" in rendered and "notice" not in rendered
+    _, cites, _ = map_citations("A [1]. B [3].", items)
+    assert cites[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/111/"
+    assert cites[1]["url"] == "https://www.ebi.ac.uk/chembl/explore/compound/CHEMBL483849"
+
+
+def test_graph_evidence_for_paths_and_neighbors() -> None:
+    path_result = {
+        "paths": [
+            {
+                "nodes": [
+                    {"id": "D1", "name": "Metformin"},
+                    {"id": "G1", "name": "MTOR"},
+                    {"id": "X1", "name": "Glioblastoma"},
+                ],
+                "edges": [
+                    {"type": "NEGATIVELY_CORRELATES", "from": "D1", "to": "G1",
+                     "source": "pubtator", "evidence_count": 64, "pmids": ["1"]},
+                    {"type": "ASSOCIATED_WITH", "from": "G1", "to": "X1",
+                     "source": "pubtator", "evidence_count": 48, "pmids": ["1", "2"]},
+                ],
+            }
+        ]
+    }  # fmt: skip
+    items = extract_evidence("paths", path_result, "t2")
+    assert [e["pmid"] for e in items] == ["1", "2"]
+    assert "Metformin - MTOR - Glioblastoma" in items[0]["text"]
+    assert items[0]["text"].count("text-mined relation") == 2  # both edges cite PMID 1
+    nb = {
+        "entity": {"name": "MGMT"},
+        "edges": [{"type": "CO_OCCURS", "direction": "in", "source": "pubtator",
+                   "evidence_count": 3, "pmids": ["9"], "neighbor": {"name": "Temozolomide"}}],
+    }  # fmt: skip
+    (item,) = extract_evidence("neighbors", nb, "t3")
+    assert "Temozolomide and MGMT are co-mentioned" in item["text"]
+    assert extract_evidence("drugs_targeting", {"error": "down"}, "t1") == []
+
+
+async def test_literature_specialist_graph_claims_reach_synthesizer(tmp_path: Path) -> None:
+    log = ToolLog()
+    script = {"t1": [[call("drugs_targeting", {"query": "AMPK"})]]}
+    deps = make_deps(
+        [plan(("t1", "literature", []))],
+        scripted_specialist(script),
+        "Metformin is reported to stimulate AMPK [2].",
+        fake_tools(log),
+    )
+    state = await run_graph(deps, tmp_path)
+    assert [name for name, _ in log.calls] == ["drugs_targeting"]
+    synth_human = str(deps.synth.model.seen[0][1].content)  # type: ignore[attr-defined]
+    assert "CHEMBL CURATED RECORD" in synth_human
+    assert "KNOWLEDGE-GRAPH RELATION" in synth_human
+    cited = state["citations"][0]
+    assert cited["source"] in ("graph", "chembl")
 
 
 async def test_specialist_cannot_call_other_specialists_tools(tmp_path: Path) -> None:
@@ -405,3 +476,62 @@ def test_extract_evidence_variants() -> None:
     assert "notice" not in comp[0]["text"]
     assert extract_evidence("search_corpus", {"error": "boom"}, "t1") == []
     assert render_for_model("search_corpus", {"error": "boom"}, []) == "Tool error: boom"
+
+
+def test_prompts_route_repurposing_through_paths_and_evidence() -> None:
+    from bioagent.agents import prompts
+
+    lit = prompts.SPECIALISTS["literature"]
+    for needle in ("paths(source=D, target=Y", "evidence(edge_id)", "primary studies"):
+        assert needle in lit
+    assert "drugs_targeting(T" in lit and "statins" in lit  # broad discovery kept
+    assert "paths(D -> Y)" in prompts.PLANNER and "statins" in prompts.PLANNER
+
+
+async def test_repurposing_task_cites_direct_edge_papers(tmp_path: Path) -> None:
+    log = ToolLog()
+    edge = "TREATS|MESH:D008687|MESH:D005909"
+    script = {
+        "t1": [
+            [call("paths", {"query": "metformin->glioblastoma"})],
+            [call("evidence", {"query": edge})],
+        ]
+    }
+    deps = make_deps(
+        [plan(("t1", "literature", []))],
+        scripted_specialist(script),
+        "Metformin reduced GBM cell growth [1] and enhanced temozolomide [2].",
+        fake_tools(log),
+    )
+    state = await run_graph(deps, tmp_path)
+    assert [name for name, _ in log.calls] == ["paths", "evidence"]
+    pmids = {e["pmid"] for e in state["evidence"].values()}
+    assert {"25867026", "29334602"} <= pmids
+    synth_human = str(deps.synth.model.seen[0][1].content)  # type: ignore[attr-defined]
+    assert "metformin treats glioblastoma" in synth_human.lower()
+    assert {c["pmid"] for c in state["citations"]} == {"25867026", "29334602"}
+
+
+def test_select_evidence_shares_budget_across_tasks() -> None:
+    """A later task (e.g. repurposing evidence) must not be crowded out by an earlier one."""
+
+    def item(key: str, pmid: str, task: str, source: str) -> Evidence:
+        return {**ev(key, pmid), "task_id": task, "source": source}  # type: ignore[typeddict-item]
+
+    t1 = [item(f"a{i}", f"1{i:03d}", "t1", "graph" if i % 3 else "corpus") for i in range(60)]
+    t2 = [item(f"b{i}", f"2{i:03d}", "t2", "corpus") for i in range(10)]
+    t2.append(item("dup", "1000", "t2", "corpus"))  # same paper as t1's first item
+    state: Any = {
+        "plan": [{"id": "t1"}, {"id": "t2"}],
+        "results": {
+            "t1": {"evidence_keys": [e["key"] for e in t1]},
+            "t2": {"evidence_keys": [e["key"] for e in t2]},
+        },
+        "evidence": {e["key"]: e for e in [*t1, *t2]},
+    }
+    chosen = select_evidence(state, limit=20)
+    per_task = {t: sum(1 for e in chosen if e["task_id"] == t) for t in ("t1", "t2")}
+    assert per_task == {"t1": 10, "t2": 10}
+    assert len({e["pmid"] for e in chosen}) == len(chosen)  # one item per paper
+    t1_sources = [e["source"] for e in chosen if e["task_id"] == "t1"][:4]
+    assert t1_sources == ["corpus", "graph", "corpus", "graph"]  # abstracts not pushed out

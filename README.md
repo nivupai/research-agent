@@ -120,6 +120,33 @@ make eval-retrieval  # recall@10, nDCG@10, MRR, precision@10, latency p50/p95 pe
 Results are written to `results/retrieval/` as markdown and JSON. No relevance labels are
 shipped; grading is manual.
 
+## Knowledge graph (Neo4j) and the graph MCP server
+
+Gene, Drug, Disease and Paper nodes built from PubTator3 annotations of the corpus, plus
+ChEMBL max_phase and mechanisms of action. Neo4j 5 community runs locally from
+`docker-compose.yml` (bound to 127.0.0.1; `NEO4J_PASSWORD` in `.env`).
+
+```bash
+make graph-up        # start Neo4j and wait until it is healthy
+make kg-build        # PubTator3 + NCBI Gene + ChEMBL (all cached in data/kg/), clear and reload
+uv run python scripts/build_kg.py --stages load --fresh  # reload from the caches only
+uv run python scripts/build_kg.py --stages chembl load --chembl-cache-only --fresh
+make serve-graph     # MCP server: find_entity, neighbors, drugs_targeting, paths, evidence
+make test-neo4j      # integration tests against the local Neo4j (not run in CI)
+```
+
+* **Nodes**: `Entity` + `Gene` (HomoloGene-merged, `symbol`), `Drug` (MeSH chemical,
+  `chembl_id`, `max_phase`, `approved` = max_phase >= 4), `Disease` (MeSH), `Paper` (PMID).
+  AMPK, PI3K, mTORC1/2 and AKT are alias groups that expand to their subunit genes.
+* **Edges**: `MENTIONS` (paper -> entity), PubTator3 relations (`TREATS`, `INHIBITS`,
+  `STIMULATES`, `ASSOCIATED_WITH`, ...; up to 50 evidence PMIDs and a count each),
+  `CO_OCCURS` (entities in the same abstract in >= 2 papers) and ChEMBL `TARGETS`
+  (`action_type`, `mechanism`, `source_db: chembl`).
+* **Safety**: loading uses `UNWIND $rows` templates; reads are fixed parameterised
+  templates (no raw Cypher) with whitelisted relationship types, at most 3 hops, a
+  per-query timeout (`NEO4J_QUERY_TIMEOUT_S`, default 10 s) and capped result sizes.
+  Results are marked `untrusted` and every literature edge carries its PMIDs.
+
 ## Multi-agent pipeline (`bioagent ask`)
 
 ```bash
@@ -136,8 +163,10 @@ A LangGraph graph (`bioagent.agents`):
 2. **dispatch** sends every ready task to its specialist in parallel (Send API).
 3. **specialists** are ReAct-style tool loops (max 6 steps) over our MCP servers, each bound
    only to its own tools: literature (`search_corpus`, `search_pubmed`, `fetch_pubmed`,
-   `search_europepmc`), chemistry (RDKit/PubChem tools), analysis (`run_python`). A
-   `graph_query` scope is reserved for the knowledge graph.
+   `search_europepmc` plus the knowledge-graph tools), chemistry (RDKit/PubChem tools),
+   analysis (`run_python`). The graph tools sit with the literature specialist because graph
+   edges are mined from the same abstracts it cites: graph claims become evidence on their
+   PMIDs (ChEMBL mechanisms are cited as ChEMBL records).
 4. **synthesizer** writes the answer with `[n]` citations mapped to evidence passages
    (PMIDs) or computed results; **verifier** checks that every `[n]` resolves and flags
    uncited sentences (NLI verification comes later).

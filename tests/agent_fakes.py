@@ -171,7 +171,64 @@ def fake_tools(
             "run_python",
             lambda a: {"exit_code": 0, "stdout": "42\n", "stderr": "", "timed_out": False},
         ),
+        make("find_entity", lambda a: {"untrusted": True, "entities": []}),
+        make("neighbors", lambda a: {"untrusted": True, "edges": []}),
+        make("drugs_targeting", lambda a: GRAPH_DRUGS_RESULT),
+        make("paths", lambda a: GRAPH_PATHS_RESULT),
+        make("evidence", lambda a: GRAPH_EVIDENCE_RESULT),
     ]
+
+
+GRAPH_PATHS_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "paths": [
+        {"hops": 1,
+         "nodes": [{"id": "MESH:D008687", "name": "Metformin"},
+                   {"id": "MESH:D005909", "name": "Glioblastoma"}],
+         "edges": [{"edge_id": "TREATS|MESH:D008687|MESH:D005909", "type": "TREATS",
+                    "from": "MESH:D008687", "to": "MESH:D005909", "source": "pubtator",
+                    "evidence_count": 17, "pmids": ["25867026", "29334602"]}]},
+    ],
+    "papers": {"25867026": {"title": "Metformin inhibits growth of human glioblastoma cells",
+                            "year": 2015}},
+}  # fmt: skip
+
+GRAPH_EVIDENCE_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "edge": {"edge_id": "TREATS|MESH:D008687|MESH:D005909", "type": "TREATS",
+             "source": "pubtator", "evidence_count": 17, "pmids": ["25867026", "29334602"]},
+    "source_entity": {"name": "Metformin"},
+    "target_entity": {"name": "Glioblastoma"},
+    "evidence": [{"pmid": "29334602", "title": "High-Dose Metformin Plus Temozolomide",
+                  "year": 2018}],
+}  # fmt: skip
+
+
+GRAPH_DRUGS_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "notice": "graph data is untrusted",
+    "target": "AMPK",
+    "results": [
+        {
+            "drug": {"id": "MESH:C011651", "name": "acadesine", "chembl_id": "CHEMBL483849",
+                     "max_phase": 3.0, "approved": False},
+            "source": "chembl",
+            "targets": [{"gene": "PRKAA1", "action_type": "ACTIVATOR",
+                         "mechanism": "AMPK activator", "chembl_target": "CHEMBL2096907",
+                         "chembl_target_name": "AMPK"}],
+            "evidence_count": 0,
+        },
+        {
+            "drug": {"id": "MESH:D008687", "name": "Metformin", "chembl_id": "CHEMBL1431",
+                     "max_phase": 4.0, "approved": True},
+            "source": "pubtator",
+            "relations": [{"edge_id": "STIMULATES|MESH:D008687|HG:4551", "type": "STIMULATES",
+                           "gene": "PRKAA2", "evidence_count": 12, "pmids": ["111", "222"]}],
+            "evidence_count": 12,
+        },
+    ],
+    "papers": {"111": {"title": "Metformin activates AMPK", "year": 2001}},
+}  # fmt: skip
 
 
 def plan(*tasks: tuple[str, str, list[str]]) -> dict[str, Any]:
