@@ -89,10 +89,15 @@ class MCPToolHub:
     """Async context manager owning one stdio session per MCP server."""
 
     def __init__(
-        self, servers: Mapping[str, str] | None = None, log_dir: Path | None = None
+        self,
+        servers: Mapping[str, str] | None = None,
+        log_dir: Path | None = None,
+        server_env: Mapping[str, Mapping[str, str]] | None = None,
     ) -> None:
         self.servers = dict(servers or MCP_SERVERS)
         self.log_dir = log_dir
+        # Extra environment per server (e.g. point the retrieval server at the eval index).
+        self.server_env = {k: dict(v) for k, v in (server_env or {}).items()}
         self._stack = AsyncExitStack()
         self._tools: list[BaseTool] = []
 
@@ -108,7 +113,12 @@ class MCPToolHub:
                     errlog = self._stack.enter_context(
                         (self.log_dir / f"mcp-{name}.log").open("a", encoding="utf-8")
                     )
-                params = StdioServerParameters(command=sys.executable, args=["-m", module])
+                env = None
+                if name in self.server_env:
+                    from mcp.client.stdio import get_default_environment
+
+                    env = {**get_default_environment(), **self.server_env[name]}
+                params = StdioServerParameters(command=sys.executable, args=["-m", module], env=env)
                 read, write = await self._stack.enter_async_context(
                     stdio_client(params, errlog=errlog)
                 )

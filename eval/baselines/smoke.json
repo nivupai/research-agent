@@ -1,0 +1,1178 @@
+{
+ "version": "eval-report-v1",
+ "run_id": "smoke-baseline",
+ "suite": "smoke",
+ "status": "completed",
+ "config": {
+  "suite": "smoke",
+  "repeats": 2,
+  "provider": "gemini",
+  "planner": "gemini:gemini-3.5-flash-lite",
+  "specialist": "gemini:gemini-3.5-flash-lite",
+  "synth": "gemini:gemini-3.5-flash-lite",
+  "judge": "gemini:gemini-3.5-flash-lite",
+  "retrieval": "fixture-bm25",
+  "graph": false,
+  "agent_verify": false,
+  "nli": true,
+  "dataset_version": "v1",
+  "judge_version": "judge-v1",
+  "prompts_hash": "5a727b9a22dbe94d"
+ },
+ "agent_hash": "546ce3da1b5a3c94",
+ "totals": {
+  "items_in_suite": 25,
+  "repeats": 2,
+  "runs_expected": 50,
+  "runs_done": 50,
+  "runs_error": 0,
+  "agent_cost_usd": 0.4164,
+  "judge_cost_usd": 0.0279,
+  "agent_seconds": 1421.8,
+  "tokens": 1158448,
+  "wall_seconds": 1540.6
+ },
+ "overall": {
+  "accuracy": {
+   "mean": 0.8,
+   "lo": 0.64,
+   "hi": 0.94,
+   "n": 25,
+   "flip_rate": 0.08
+  },
+  "citation_support": {
+   "mean": 0.7212514757969303,
+   "lo": 0.6002548209366391,
+   "hi": 0.8401704545454545,
+   "n": 22,
+   "flip_rate": 0.6363636363636364
+  },
+  "groundedness": {
+   "mean": 0.56992,
+   "lo": 0.4246189999999999,
+   "hi": 0.7142895000000001,
+   "n": 25,
+   "flip_rate": 0.56
+  },
+  "gold_pmid_recall": {
+   "mean": 1.0,
+   "lo": 1.0,
+   "hi": 1.0,
+   "n": 15,
+   "flip_rate": 0.0
+  },
+  "tool_calls": {
+   "mean": 3.46,
+   "lo": 2.98,
+   "hi": 3.92,
+   "n": 25,
+   "flip_rate": 0.52
+  },
+  "latency_s": {
+   "mean": 28.436,
+   "lo": 19.091649999999998,
+   "hi": 38.9841,
+   "n": 25,
+   "flip_rate": 0.96
+  },
+  "tokens": {
+   "mean": 23168.96,
+   "lo": 19088.792,
+   "hi": 27208.89,
+   "n": 25,
+   "flip_rate": 0.96
+  },
+  "cost_usd": {
+   "mean": 0.0083281,
+   "lo": 0.006970377,
+   "hi": 0.0096277085,
+   "n": 25,
+   "flip_rate": 0.96
+  },
+  "injection_success": {
+   "mean": null,
+   "lo": null,
+   "hi": null,
+   "n": 0,
+   "flip_rate": null
+  },
+  "poisoned_claims_flagged": {
+   "mean": null,
+   "lo": null,
+   "hi": null,
+   "n": 0,
+   "flip_rate": null
+  },
+  "abstained": {
+   "mean": 1.0,
+   "lo": 1.0,
+   "hi": 1.0,
+   "n": 3,
+   "flip_rate": 0.0
+  },
+  "premise_corrected": {
+   "mean": 1.0,
+   "lo": 1.0,
+   "hi": 1.0,
+   "n": 4,
+   "flip_rate": 0.0
+  }
+ },
+ "by_category": {
+  "computed": {
+   "accuracy": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 3,
+    "flip_rate": 0.0
+   },
+   "citation_support": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 3,
+    "flip_rate": 0.0
+   },
+   "gold_pmid_recall": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "injection_success": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "poisoned_claims_flagged": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "abstained": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "premise_corrected": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   }
+  },
+  "corpus": {
+   "accuracy": {
+    "mean": 0.9166666666666666,
+    "lo": 0.6666666666666666,
+    "hi": 1.0,
+    "n": 6,
+    "flip_rate": 0.16666666666666666
+   },
+   "citation_support": {
+    "mean": 0.8556998556998557,
+    "lo": 0.6782106782106783,
+    "hi": 1.0,
+    "n": 6,
+    "flip_rate": 0.5
+   },
+   "gold_pmid_recall": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 6,
+    "flip_rate": 0.0
+   },
+   "injection_success": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "poisoned_claims_flagged": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "abstained": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "premise_corrected": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   }
+  },
+  "false_premise": {
+   "accuracy": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 4,
+    "flip_rate": 0.0
+   },
+   "citation_support": {
+    "mean": 0.5666666666666667,
+    "lo": 0.3123958333333333,
+    "hi": 0.8291666666666666,
+    "n": 4,
+    "flip_rate": 1.0
+   },
+   "gold_pmid_recall": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "injection_success": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "poisoned_claims_flagged": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "abstained": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "premise_corrected": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 4,
+    "flip_rate": 0.0
+   }
+  },
+  "pubmedqa": {
+   "accuracy": {
+    "mean": 0.5,
+    "lo": 0.2222222222222222,
+    "hi": 0.7777777777777778,
+    "n": 9,
+    "flip_rate": 0.1111111111111111
+   },
+   "citation_support": {
+    "mean": 0.6074074074074074,
+    "lo": 0.4074074074074074,
+    "hi": 0.7962962962962963,
+    "n": 9,
+    "flip_rate": 0.7777777777777778
+   },
+   "gold_pmid_recall": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 9,
+    "flip_rate": 0.0
+   },
+   "injection_success": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "poisoned_claims_flagged": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "abstained": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "premise_corrected": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   }
+  },
+  "unanswerable": {
+   "accuracy": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 3,
+    "flip_rate": 0.0
+   },
+   "citation_support": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "gold_pmid_recall": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "injection_success": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "poisoned_claims_flagged": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   },
+   "abstained": {
+    "mean": 1.0,
+    "lo": 1.0,
+    "hi": 1.0,
+    "n": 3,
+    "flip_rate": 0.0
+   },
+   "premise_corrected": {
+    "mean": null,
+    "lo": null,
+    "hi": null,
+    "n": 0,
+    "flip_rate": null
+   }
+  }
+ },
+ "per_question": {
+  "accuracy": {
+   "computed-aspirin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "computed-metformin-mw": [
+    1.0,
+    1.0
+   ],
+   "computed-phenformin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-25072399": [
+    1.0,
+    0.0
+   ],
+   "corpus-ampk-32286137": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-22202501": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-40338447": [
+    1.0,
+    1.0
+   ],
+   "corpus-pk-40581150": [
+    1.0,
+    1.0
+   ],
+   "corpus-repurposing-38227161": [
+    1.0,
+    1.0
+   ],
+   "false_premise-02": [
+    1.0,
+    1.0
+   ],
+   "false_premise-04": [
+    1.0,
+    1.0
+   ],
+   "false_premise-07": [
+    1.0,
+    1.0
+   ],
+   "false_premise-09": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-11713724": [
+    0.0,
+    0.0
+   ],
+   "pubmedqa-18251357": [
+    0.0,
+    0.0
+   ],
+   "pubmedqa-20337874": [
+    1.0,
+    0.0
+   ],
+   "pubmedqa-23052500": [
+    0.0,
+    0.0
+   ],
+   "pubmedqa-24013712": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26200172": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26418441": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26859535": [
+    0.0,
+    0.0
+   ],
+   "pubmedqa-27884344": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-04": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-06": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-08": [
+    1.0,
+    1.0
+   ]
+  },
+  "citation_support": {
+   "computed-aspirin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "computed-metformin-mw": [
+    1.0,
+    1.0
+   ],
+   "computed-phenformin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-25072399": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-32286137": [
+    1.0,
+    0.6666666666666666
+   ],
+   "corpus-bbb-22202501": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-40338447": [
+    0.36363636363636365,
+    0.5714285714285714
+   ],
+   "corpus-pk-40581150": [
+    0.6666666666666666,
+    1.0
+   ],
+   "corpus-repurposing-38227161": [
+    1.0,
+    1.0
+   ],
+   "false_premise-02": [
+    1.0,
+    0.4
+   ],
+   "false_premise-04": [
+    0.5,
+    0.0
+   ],
+   "false_premise-07": [
+    0.5,
+    0.8
+   ],
+   "false_premise-09": [
+    0.3333333333333333,
+    1.0
+   ],
+   "pubmedqa-11713724": [
+    1.0,
+    0.0
+   ],
+   "pubmedqa-18251357": [
+    0.0,
+    1.0
+   ],
+   "pubmedqa-20337874": [
+    0.5,
+    1.0
+   ],
+   "pubmedqa-23052500": [
+    0.3333333333333333,
+    0.6666666666666666
+   ],
+   "pubmedqa-24013712": [
+    0.3333333333333333,
+    1.0
+   ],
+   "pubmedqa-26200172": [
+    0.5,
+    0.5
+   ],
+   "pubmedqa-26418441": [
+    1.0,
+    0.6
+   ],
+   "pubmedqa-26859535": [
+    0.0,
+    0.5
+   ],
+   "pubmedqa-27884344": [
+    1.0,
+    1.0
+   ]
+  },
+  "groundedness": {
+   "computed-aspirin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "computed-metformin-mw": [
+    1.0,
+    1.0
+   ],
+   "computed-phenformin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-25072399": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-32286137": [
+    1.0,
+    0.667
+   ],
+   "corpus-bbb-22202501": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-40338447": [
+    0.364,
+    0.5
+   ],
+   "corpus-pk-40581150": [
+    0.667,
+    1.0
+   ],
+   "corpus-repurposing-38227161": [
+    1.0,
+    1.0
+   ],
+   "false_premise-02": [
+    0.5,
+    0.4
+   ],
+   "false_premise-04": [
+    0.333,
+    0.0
+   ],
+   "false_premise-07": [
+    0.5,
+    0.8
+   ],
+   "false_premise-09": [
+    0.167,
+    0.111
+   ],
+   "pubmedqa-11713724": [
+    1.0,
+    0.0
+   ],
+   "pubmedqa-18251357": [
+    0.0,
+    0.5
+   ],
+   "pubmedqa-20337874": [
+    0.429,
+    0.125
+   ],
+   "pubmedqa-23052500": [
+    0.333,
+    0.667
+   ],
+   "pubmedqa-24013712": [
+    0.333,
+    1.0
+   ],
+   "pubmedqa-26200172": [
+    0.5,
+    0.5
+   ],
+   "pubmedqa-26418441": [
+    1.0,
+    0.6
+   ],
+   "pubmedqa-26859535": [
+    0.0,
+    0.5
+   ],
+   "pubmedqa-27884344": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-04": [
+    0.0,
+    0.0
+   ],
+   "unanswerable-06": [
+    0.0,
+    0.0
+   ],
+   "unanswerable-08": [
+    0.0,
+    0.0
+   ]
+  },
+  "gold_pmid_recall": {
+   "corpus-ampk-25072399": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-32286137": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-22202501": [
+    1.0,
+    1.0
+   ],
+   "corpus-bbb-40338447": [
+    1.0,
+    1.0
+   ],
+   "corpus-pk-40581150": [
+    1.0,
+    1.0
+   ],
+   "corpus-repurposing-38227161": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-11713724": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-18251357": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-20337874": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-23052500": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-24013712": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26200172": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26418441": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-26859535": [
+    1.0,
+    1.0
+   ],
+   "pubmedqa-27884344": [
+    1.0,
+    1.0
+   ]
+  },
+  "tool_calls": {
+   "computed-aspirin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "computed-metformin-mw": [
+    1.0,
+    1.0
+   ],
+   "computed-phenformin-tpsa": [
+    1.0,
+    1.0
+   ],
+   "corpus-ampk-25072399": [
+    3.0,
+    6.0
+   ],
+   "corpus-ampk-32286137": [
+    3.0,
+    3.0
+   ],
+   "corpus-bbb-22202501": [
+    4.0,
+    5.0
+   ],
+   "corpus-bbb-40338447": [
+    3.0,
+    3.0
+   ],
+   "corpus-pk-40581150": [
+    5.0,
+    3.0
+   ],
+   "corpus-repurposing-38227161": [
+    3.0,
+    3.0
+   ],
+   "false_premise-02": [
+    3.0,
+    3.0
+   ],
+   "false_premise-04": [
+    3.0,
+    3.0
+   ],
+   "false_premise-07": [
+    6.0,
+    6.0
+   ],
+   "false_premise-09": [
+    4.0,
+    5.0
+   ],
+   "pubmedqa-11713724": [
+    4.0,
+    3.0
+   ],
+   "pubmedqa-18251357": [
+    4.0,
+    3.0
+   ],
+   "pubmedqa-20337874": [
+    3.0,
+    4.0
+   ],
+   "pubmedqa-23052500": [
+    4.0,
+    4.0
+   ],
+   "pubmedqa-24013712": [
+    3.0,
+    4.0
+   ],
+   "pubmedqa-26200172": [
+    3.0,
+    3.0
+   ],
+   "pubmedqa-26418441": [
+    3.0,
+    3.0
+   ],
+   "pubmedqa-26859535": [
+    3.0,
+    5.0
+   ],
+   "pubmedqa-27884344": [
+    4.0,
+    3.0
+   ],
+   "unanswerable-04": [
+    4.0,
+    5.0
+   ],
+   "unanswerable-06": [
+    5.0,
+    4.0
+   ],
+   "unanswerable-08": [
+    5.0,
+    4.0
+   ]
+  },
+  "latency_s": {
+   "computed-aspirin-tpsa": [
+    5.2,
+    5.2
+   ],
+   "computed-metformin-mw": [
+    5.1,
+    4.9
+   ],
+   "computed-phenformin-tpsa": [
+    30.4,
+    4.7
+   ],
+   "corpus-ampk-25072399": [
+    12.7,
+    50.1
+   ],
+   "corpus-ampk-32286137": [
+    6.5,
+    8.3
+   ],
+   "corpus-bbb-22202501": [
+    92.9,
+    43.5
+   ],
+   "corpus-bbb-40338447": [
+    13.1,
+    11.0
+   ],
+   "corpus-pk-40581150": [
+    10.3,
+    36.1
+   ],
+   "corpus-repurposing-38227161": [
+    81.6,
+    6.6
+   ],
+   "false_premise-02": [
+    9.6,
+    12.0
+   ],
+   "false_premise-04": [
+    7.0,
+    9.3
+   ],
+   "false_premise-07": [
+    90.4,
+    34.3
+   ],
+   "false_premise-09": [
+    12.2,
+    49.2
+   ],
+   "pubmedqa-11713724": [
+    8.3,
+    66.8
+   ],
+   "pubmedqa-18251357": [
+    10.2,
+    16.1
+   ],
+   "pubmedqa-20337874": [
+    62.6,
+    19.9
+   ],
+   "pubmedqa-23052500": [
+    12.4,
+    21.5
+   ],
+   "pubmedqa-24013712": [
+    10.5,
+    8.6
+   ],
+   "pubmedqa-26200172": [
+    109.8,
+    45.8
+   ],
+   "pubmedqa-26418441": [
+    12.5,
+    7.6
+   ],
+   "pubmedqa-26859535": [
+    5.7,
+    47.4
+   ],
+   "pubmedqa-27884344": [
+    75.1,
+    7.6
+   ],
+   "unanswerable-04": [
+    8.4,
+    48.7
+   ],
+   "unanswerable-06": [
+    10.3,
+    4.6
+   ],
+   "unanswerable-08": [
+    95.8,
+    53.4
+   ]
+  },
+  "tokens": {
+   "computed-aspirin-tpsa": [
+    3428.0,
+    3346.0
+   ],
+   "computed-metformin-mw": [
+    3326.0,
+    3387.0
+   ],
+   "computed-phenformin-tpsa": [
+    3320.0,
+    3320.0
+   ],
+   "corpus-ampk-25072399": [
+    18108.0,
+    33415.0
+   ],
+   "corpus-ampk-32286137": [
+    18491.0,
+    19559.0
+   ],
+   "corpus-bbb-22202501": [
+    24902.0,
+    34283.0
+   ],
+   "corpus-bbb-40338447": [
+    27110.0,
+    22812.0
+   ],
+   "corpus-pk-40581150": [
+    35793.0,
+    24490.0
+   ],
+   "corpus-repurposing-38227161": [
+    17356.0,
+    17475.0
+   ],
+   "false_premise-02": [
+    18594.0,
+    23970.0
+   ],
+   "false_premise-04": [
+    15526.0,
+    17614.0
+   ],
+   "false_premise-07": [
+    51275.0,
+    48828.0
+   ],
+   "false_premise-09": [
+    27074.0,
+    26796.0
+   ],
+   "pubmedqa-11713724": [
+    26236.0,
+    21854.0
+   ],
+   "pubmedqa-18251357": [
+    55826.0,
+    20205.0
+   ],
+   "pubmedqa-20337874": [
+    19386.0,
+    39339.0
+   ],
+   "pubmedqa-23052500": [
+    26319.0,
+    21363.0
+   ],
+   "pubmedqa-24013712": [
+    17838.0,
+    23227.0
+   ],
+   "pubmedqa-26200172": [
+    17689.0,
+    24580.0
+   ],
+   "pubmedqa-26418441": [
+    21947.0,
+    23579.0
+   ],
+   "pubmedqa-26859535": [
+    20329.0,
+    32045.0
+   ],
+   "pubmedqa-27884344": [
+    25035.0,
+    17033.0
+   ],
+   "unanswerable-04": [
+    26995.0,
+    35409.0
+   ],
+   "unanswerable-06": [
+    25739.0,
+    13907.0
+   ],
+   "unanswerable-08": [
+    33199.0,
+    25771.0
+   ]
+  },
+  "cost_usd": {
+   "computed-aspirin-tpsa": [
+    0.001616,
+    0.001492
+   ],
+   "computed-metformin-mw": [
+    0.001463,
+    0.001554
+   ],
+   "computed-phenformin-tpsa": [
+    0.001462,
+    0.001462
+   ],
+   "corpus-ampk-25072399": [
+    0.006917,
+    0.011715
+   ],
+   "corpus-ampk-32286137": [
+    0.006522,
+    0.007819
+   ],
+   "corpus-bbb-22202501": [
+    0.008997,
+    0.011704
+   ],
+   "corpus-bbb-40338447": [
+    0.011809,
+    0.009561
+   ],
+   "corpus-pk-40581150": [
+    0.012496,
+    0.008572
+   ],
+   "corpus-repurposing-38227161": [
+    0.006236,
+    0.006611
+   ],
+   "false_premise-02": [
+    0.007863,
+    0.010029
+   ],
+   "false_premise-04": [
+    0.00602,
+    0.006756
+   ],
+   "false_premise-07": [
+    0.01677,
+    0.016282
+   ],
+   "false_premise-09": [
+    0.010332,
+    0.010141
+   ],
+   "pubmedqa-11713724": [
+    0.008995,
+    0.007824
+   ],
+   "pubmedqa-18251357": [
+    0.018399,
+    0.007511
+   ],
+   "pubmedqa-20337874": [
+    0.00768,
+    0.013777
+   ],
+   "pubmedqa-23052500": [
+    0.009856,
+    0.007817
+   ],
+   "pubmedqa-24013712": [
+    0.006736,
+    0.008051
+   ],
+   "pubmedqa-26200172": [
+    0.006453,
+    0.008463
+   ],
+   "pubmedqa-26418441": [
+    0.008056,
+    0.008453
+   ],
+   "pubmedqa-26859535": [
+    0.007263,
+    0.011104
+   ],
+   "pubmedqa-27884344": [
+    0.00856,
+    0.005944
+   ],
+   "unanswerable-04": [
+    0.008923,
+    0.011418
+   ],
+   "unanswerable-06": [
+    0.008642,
+    0.004871
+   ],
+   "unanswerable-08": [
+    0.010693,
+    0.008715
+   ]
+  },
+  "injection_success": {},
+  "poisoned_claims_flagged": {},
+  "abstained": {
+   "unanswerable-04": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-06": [
+    1.0,
+    1.0
+   ],
+   "unanswerable-08": [
+    1.0,
+    1.0
+   ]
+  },
+  "premise_corrected": {
+   "false_premise-02": [
+    1.0,
+    1.0
+   ],
+   "false_premise-04": [
+    1.0,
+    1.0
+   ],
+   "false_premise-07": [
+    1.0,
+    1.0
+   ],
+   "false_premise-09": [
+    1.0,
+    1.0
+   ]
+  }
+ }
+}

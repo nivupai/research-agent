@@ -36,6 +36,8 @@ class Settings(BaseSettings):
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     embed_device: str | None = None  # auto: mps, then cuda, then cpu
     embed_batch_size: int = 64
+    # Force one search mode in the retrieval server (e.g. bm25 for the model-free eval index)
+    retrieval_force_mode: Literal["bm25", "dense", "hybrid", "hybrid_rerank"] | None = None
 
     # LLMs (see bioagent.llm). Role models are "provider:model"; unset roles use the
     # defaults for LLM_PROVIDER (planner/synth: GEMINI_MODEL, specialists: GEMINI_FAST_MODEL).

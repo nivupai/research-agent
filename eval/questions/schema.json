@@ -1,0 +1,207 @@
+{
+ "$defs": {
+  "Injection": {
+   "description": "A poisoned passage (only ever added to the isolated eval index) and what it must not\nachieve. Injection items are user-provided: see ``INJECTION_FILE``.",
+   "properties": {
+    "passage": {
+     "$ref": "#/$defs/PoisonedPassage"
+    },
+    "canaries": {
+     "description": "strings that must not be output",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 1,
+     "title": "Canaries",
+     "type": "array"
+    },
+    "forbidden_tools": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Forbidden Tools",
+     "type": "array"
+    },
+    "forbidden_pmids": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Forbidden Pmids",
+     "type": "array"
+    }
+   },
+   "required": [
+    "passage",
+    "canaries"
+   ],
+   "title": "Injection",
+   "type": "object"
+  },
+  "NumericGold": {
+   "properties": {
+    "name": {
+     "description": "property, e.g. tpsa",
+     "title": "Name",
+     "type": "string"
+    },
+    "value": {
+     "title": "Value",
+     "type": "number"
+    },
+    "tolerance": {
+     "default": 0.05,
+     "description": "absolute tolerance",
+     "title": "Tolerance",
+     "type": "number"
+    }
+   },
+   "required": [
+    "name",
+    "value"
+   ],
+   "title": "NumericGold",
+   "type": "object"
+  },
+  "PoisonedPassage": {
+   "properties": {
+    "pmid": {
+     "description": "reserved fake PMID range 99xxxxxx",
+     "pattern": "^99\\d{6}$",
+     "title": "Pmid",
+     "type": "string"
+    },
+    "title": {
+     "title": "Title",
+     "type": "string"
+    },
+    "abstract": {
+     "title": "Abstract",
+     "type": "string"
+    },
+    "year": {
+     "default": 2023,
+     "title": "Year",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "pmid",
+    "title",
+    "abstract"
+   ],
+   "title": "PoisonedPassage",
+   "type": "object"
+  }
+ },
+ "properties": {
+  "id": {
+   "pattern": "^[a-z_]+-[0-9a-z_-]+$",
+   "title": "Id",
+   "type": "string"
+  },
+  "category": {
+   "enum": [
+    "pubmedqa",
+    "corpus",
+    "injection",
+    "unanswerable",
+    "false_premise",
+    "computed"
+   ],
+   "title": "Category",
+   "type": "string"
+  },
+  "question": {
+   "minLength": 10,
+   "title": "Question",
+   "type": "string"
+  },
+  "scoring_type": {
+   "enum": [
+    "label",
+    "free_text",
+    "numeric",
+    "injection",
+    "abstain",
+    "premise"
+   ],
+   "title": "Scoring Type",
+   "type": "string"
+  },
+  "gold": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "items": {
+      "$ref": "#/$defs/NumericGold"
+     },
+     "type": "array"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "description": "label (yes/no/maybe), short answer, numeric values or null",
+   "title": "Gold"
+  },
+  "gold_pmids": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Gold Pmids",
+   "type": "array"
+  },
+  "key_facts": {
+   "items": {
+    "type": "string"
+   },
+   "title": "Key Facts",
+   "type": "array"
+  },
+  "injection": {
+   "anyOf": [
+    {
+     "$ref": "#/$defs/Injection"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null
+  },
+  "needs_review": {
+   "default": false,
+   "title": "Needs Review",
+   "type": "boolean"
+  },
+  "source": {
+   "description": "where the item comes from (dataset, generator, author)",
+   "title": "Source",
+   "type": "string"
+  },
+  "notes": {
+   "anyOf": [
+    {
+     "type": "string"
+    },
+    {
+     "type": "null"
+    }
+   ],
+   "default": null,
+   "title": "Notes"
+  }
+ },
+ "required": [
+  "id",
+  "category",
+  "question",
+  "scoring_type",
+  "source"
+ ],
+ "title": "EvalItem",
+ "type": "object"
+}

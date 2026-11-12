@@ -97,7 +97,16 @@ def main(argv: list[str] | None = None) -> int:
     ask_p.add_argument("--resume", metavar="RUN_ID", help="resume a failed or interrupted run")
     ask_p.add_argument("--json", action="store_true", help="print the run record as JSON")
     ask_p.add_argument("--no-verify", action="store_true", help="skip claim-level NLI verification")
+    from bioagent.eval.cli import add_parser as add_eval_parser
+
+    add_eval_parser(sub)
     args = parser.parse_args(argv)
+    if args.command == "eval":
+        logging.basicConfig(level=logging.WARNING)
+        quiet_http_logging()
+        from bioagent.eval.cli import main as eval_main
+
+        return eval_main(args)
 
     logging.basicConfig(level=logging.WARNING)
     quiet_http_logging()

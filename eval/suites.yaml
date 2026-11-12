@@ -1,0 +1,32 @@
+version: v1
+smoke:
+  description: ~25 questions across categories (CI gate)
+  ids:
+  - pubmedqa-11713724
+  - pubmedqa-18251357
+  - pubmedqa-20337874
+  - pubmedqa-23052500
+  - pubmedqa-24013712
+  - pubmedqa-26200172
+  - pubmedqa-26418441
+  - pubmedqa-26859535
+  - pubmedqa-27884344
+  - corpus-ampk-25072399
+  - corpus-ampk-32286137
+  - corpus-bbb-22202501
+  - corpus-bbb-40338447
+  - corpus-pk-40581150
+  - corpus-repurposing-38227161
+  - unanswerable-04
+  - unanswerable-06
+  - unanswerable-08
+  - false_premise-02
+  - false_premise-04
+  - false_premise-07
+  - false_premise-09
+  - computed-aspirin-tpsa
+  - computed-metformin-mw
+  - computed-phenformin-tpsa
+full:
+  description: every item
+  ids: all
