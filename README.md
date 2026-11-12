@@ -120,6 +120,39 @@ make eval-retrieval  # recall@10, nDCG@10, MRR, precision@10, latency p50/p95 pe
 Results are written to `results/retrieval/` as markdown and JSON. No relevance labels are
 shipped; grading is manual.
 
+## Multi-agent pipeline (`bioagent ask`)
+
+```bash
+uv run bioagent ask "Which approved drugs act on the AMPK pathway, and is there evidence any could be repurposed for glioblastoma?"
+uv run bioagent ask "..." --provider ollama      # local qwen3:4b (ollama pull qwen3:4b)
+uv run bioagent ask --resume <run_id>            # continue a failed/interrupted run
+uv run bioagent ask "..." --json                 # full run record on stdout
+```
+
+A LangGraph graph (`bioagent.agents`):
+
+1. **planner** turns the question into a task DAG (structured output; `literature`,
+   `chemistry`, `analysis` tasks with `depends_on`).
+2. **dispatch** sends every ready task to its specialist in parallel (Send API).
+3. **specialists** are ReAct-style tool loops (max 6 steps) over our MCP servers, each bound
+   only to its own tools: literature (`search_corpus`, `search_pubmed`, `fetch_pubmed`,
+   `search_europepmc`), chemistry (RDKit/PubChem tools), analysis (`run_python`). A
+   `graph_query` scope is reserved for the knowledge graph.
+4. **synthesizer** writes the answer with `[n]` citations mapped to evidence passages
+   (PMIDs) or computed results; **verifier** checks that every `[n]` resolves and flags
+   uncited sentences (NLI verification comes later).
+
+All retrieved text is wrapped in `<<<UNTRUSTED_DATA>>>` blocks and the models are told never
+to follow instructions inside them. Runs are checkpointed in `data/checkpoints.sqlite`
+(thread per run) and saved to `results/runs/<run_id>.json` with tokens, latency and
+list-price cost per call.
+
+Models: `LLM_PROVIDER` (gemini|ollama), `GEMINI_MODEL` (planner/synthesizer, default
+`gemini-3.5-flash`), `GEMINI_FAST_MODEL` (specialists, default `gemini-3.5-flash-lite`),
+`OLLAMA_MODEL`, or per-role `PLANNER_MODEL` / `SPECIALIST_MODEL` / `SYNTH_MODEL` as
+`provider:model`. Free-tier 429s are retried with backoff; an exhausted daily quota stops the
+run with a clear message and the run can be resumed later.
+
 ## Development
 
 ```bash
@@ -128,5 +161,6 @@ make test        # unit tests (network mocked with respx)
 make test-live   # tests that hit the real PubMed / Europe PMC / PubChem APIs
 make test-docker # sandbox integration tests (needs Docker + make sandbox-image)
 make test-models # tests that load the real embedding / reranking models
+make test-llm    # tests that call Gemini / Ollama
 make smoke       # launch each MCP server over stdio and call every tool
 ```
