@@ -61,6 +61,10 @@ def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> Ag
         specialist=RoleModel(specs.specialist, make_chat_model(specs.specialist, settings)),
         synth=RoleModel(specs.synth, make_chat_model(specs.synth, settings)),
         tools=tools,
+        specialists={
+            kind: RoleModel(spec, make_chat_model(spec, settings))
+            for kind, spec in specs.specialists.items()
+        },
         max_retries=settings.llm_max_retries,
         # Small local models lose track of the question with long prompts.
         synth_max_evidence=16 if specs.synth.provider == "ollama" else 40,
@@ -121,6 +125,7 @@ def run_record(state: AgentState, meta: RunMeta) -> dict[str, Any]:
         "started_at": meta.started_at,
         "plan": state.get("plan", []),
         "plan_rationale": state.get("plan_rationale", ""),
+        "plan_notes": state.get("plan_notes", []),
         "task_results": state.get("results", {}),
         "answer": state.get("answer", ""),
         "citations": citations,
@@ -165,11 +170,7 @@ async def ask(
     else:
         raise ValueError("give a question or --resume RUN_ID")
     specs = role_specs(settings, provider)
-    meta.models = {
-        "planner": str(specs.planner),
-        "specialist": str(specs.specialist),
-        "synth": str(specs.synth),
-    }
+    meta.models = specs.describe()
     meta.attempts += 1
     meta.status = "running"
     meta.save(runs_dir)

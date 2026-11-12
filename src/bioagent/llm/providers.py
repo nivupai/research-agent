@@ -12,8 +12,8 @@ import asyncio
 import random
 import re
 import time
-from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
@@ -48,6 +48,16 @@ class RoleModels:
     planner: ModelSpec
     specialist: ModelSpec
     synth: ModelSpec
+    # Per-specialist overrides keyed by task kind (literature, chemistry, analysis).
+    specialists: Mapping[str, ModelSpec] = field(default_factory=dict)
+
+    def specialist_for(self, kind: str) -> ModelSpec:
+        return self.specialists.get(kind, self.specialist)
+
+    def describe(self) -> dict[str, str]:
+        out = {"planner": str(self.planner), "specialist": str(self.specialist)}
+        out |= {f"specialist:{k}": str(v) for k, v in sorted(self.specialists.items())}
+        return out | {"synth": str(self.synth)}
 
 
 def parse_spec(spec: str) -> ModelSpec:
@@ -74,10 +84,16 @@ def role_specs(settings: Settings, provider: str | None = None) -> RoleModels:
         raise ValueError(f"unknown provider {chosen!r}")
     if provider is not None:
         return defaults
+    per_kind = {
+        "literature": settings.literature_model,
+        "chemistry": settings.chemistry_model,
+        "analysis": settings.analysis_model,
+    }
     return RoleModels(
         parse_spec(settings.planner_model) if settings.planner_model else defaults.planner,
         parse_spec(settings.specialist_model) if settings.specialist_model else defaults.specialist,
         parse_spec(settings.synth_model) if settings.synth_model else defaults.synth,
+        {k: parse_spec(v) for k, v in per_kind.items() if v},
     )
 
 

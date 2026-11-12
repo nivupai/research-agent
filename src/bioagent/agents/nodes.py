@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import itertools
 import re
 import time
@@ -64,8 +65,13 @@ class AgentDeps:
     synth_max_evidence: int = MAX_EVIDENCE_FOR_SYNTH
     synth_evidence_chars: int = EVIDENCE_CHARS_FOR_SYNTH
     sleep: Callable[[float], Awaitable[None]] | None = None
+    # Per-specialist model overrides (e.g. a stronger model for literature only).
+    specialists: dict[str, RoleModel] = field(default_factory=dict)
     # Test hook: called at the start of each specialist (e.g. to inject a failure).
     on_specialist_start: Callable[[str], None] | None = field(default=None)
+
+    def specialist_for(self, kind: str) -> RoleModel:
+        return self.specialists.get(kind, self.specialist)
 
 
 def message_text(message: BaseMessage) -> str:
@@ -106,6 +112,44 @@ async def _invoke(
 
 
 # --- planner ---------------------------------------------------------------------------
+# Chemistry/analysis tasks are only kept when the question asks for computation.
+_COMPUTE_RE = re.compile(
+    r"propert(?:y|ies)|drug[- ]?likeness|lipinski|veber|\bbbb\b|blood[- ]brain|"
+    r"\bc?logp\b|tpsa|polar surface|molecular weight|\bsmiles\b|similar(?:ity)?\b|"
+    r"substructure|physicochemical|comput|calculat|simulat|statistic|regression|"
+    r"dose[- ]response|\bic50\b|half[- ]life|\bplot\b|\bcorrelat",
+    re.I,
+)
+COMPUTE_KINDS = ("chemistry", "analysis")
+
+
+def asks_for_computation(question: str) -> bool:
+    return bool(_COMPUTE_RE.search(question))
+
+
+def enforce_task_kinds(tasks: list[Task], question: str) -> tuple[list[Task], list[str]]:
+    """Drop chemistry/analysis tasks the question did not ask for (and dangling deps)."""
+    if asks_for_computation(question):
+        return tasks, []
+    dropped = {t.id for t in tasks if t.kind in COMPUTE_KINDS}
+    if not dropped:
+        return tasks, []
+    kept = [
+        t.model_copy(update={"depends_on": [d for d in t.depends_on if d not in dropped]})
+        for t in tasks
+        if t.id not in dropped
+    ]
+    notes = [
+        f"dropped {t.kind} task {t.id} (the question asks for no properties or computation)"
+        for t in tasks
+        if t.id in dropped
+    ]
+    if not kept:
+        kept = [Task(id="t1", kind="literature", description=question)]
+        notes.append("no literature task left; planned a single literature task")
+    return kept, notes
+
+
 def make_planner(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, Any]]]:
     async def planner(state: AgentState) -> dict[str, Any]:
         stats = RunStatsCollector()
@@ -133,9 +177,11 @@ def make_planner(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, 
                 rationale="fallback: planner output could not be parsed",
             )
             errors.append("planner fell back to a single literature task")
+        tasks, notes = enforce_task_kinds(plan.tasks, state["question"])
         return {
-            "plan": [t.model_dump() for t in plan.tasks],
+            "plan": [t.model_dump() for t in tasks],
             "plan_rationale": plan.rationale,
+            "plan_notes": notes,
             "errors": errors,
             **stats.update(),
         }
@@ -179,6 +225,159 @@ def route_ready(state: AgentState) -> list[Send] | str:
     ]
 
 
+# --- deterministic drug discovery --------------------------------------------------------
+DISCOVERY_TOOLS = frozenset({"drugs_targeting", "search_corpus", "drugs_mentioned"})
+# Live PubMed adds breadth beyond the local corpus (e.g. statins, kinase inhibitors).
+DISCOVERY_PUBMED_QUERY = "{target} activation approved drugs repurposing"
+DISCOVERY_QUERIES = (
+    "{target} activator drug",
+    "{target} inhibitor approved drug",
+    "approved drugs repurposed in cancer that activate {target}",
+)
+DISCOVERY_K = 15
+MAX_CANDIDATES = 20
+
+
+@dataclass
+class Discovery:
+    evidence: dict[str, Evidence]
+    candidates: list[dict[str, Any]]
+    prompt: str
+    summary: str
+
+
+async def _run_tool(
+    tools: Mapping[str, Any],
+    name: str,
+    args: dict[str, Any],
+    stats: RunStatsCollector,
+    task_id: str,
+) -> dict[str, Any]:
+    started = time.monotonic()
+    try:
+        result = await tools[name].ainvoke(args)
+    except Exception as exc:
+        result = {"error": f"{type(exc).__name__}: {exc}"}
+    if not isinstance(result, dict):
+        result = {"result": result}
+    error = result.get("error")
+    stats.add_tool(task_id, name, error is None, started, error=str(error) if error else None)
+    return result
+
+
+def merge_candidates(
+    graph_result: Mapping[str, Any],
+    mentioned_result: Mapping[str, Any],
+    approved_only: bool = False,
+) -> list[dict[str, Any]]:
+    """Union of graph drugs_targeting hits and drugs annotated in the corpus hits."""
+    merged: dict[str, dict[str, Any]] = {}
+    for item in graph_result.get("results", []):
+        drug = item["drug"]
+        entry = merged.setdefault(
+            str(drug["id"]),
+            {"name": drug["name"], "max_phase": drug.get("max_phase"), "sources": set(),
+             "graph_evidence": 0, "corpus_papers": 0},
+        )  # fmt: skip
+        entry["sources"].add("chembl" if item["source"] == "chembl" else "graph")
+        entry["graph_evidence"] += int(item.get("evidence_count") or 0)
+    for drug in mentioned_result.get("drugs", []):
+        phase = drug.get("max_phase")
+        if approved_only and phase is not None and phase < 4:
+            continue  # unknown phase is kept: drug classes (e.g. "Salicylates") have none
+        entry = merged.setdefault(
+            str(drug["id"]),
+            {"name": drug["name"], "max_phase": drug.get("max_phase"), "sources": set(),
+             "graph_evidence": 0, "corpus_papers": 0},
+        )  # fmt: skip
+        entry["sources"].add("corpus")
+        entry["corpus_papers"] = int(drug.get("papers_in_query") or 0)
+
+    def weight(e: dict[str, Any]) -> int:
+        return -(int(e["corpus_papers"]) + int(e["graph_evidence"]))
+
+    both = sorted((e for e in merged.values() if len(e["sources"]) > 1), key=weight)
+    graph_only = sorted((e for e in merged.values() if e["sources"] != {"corpus"}
+                         and len(e["sources"]) == 1), key=weight)  # fmt: skip
+    corpus_only = sorted((e for e in merged.values() if e["sources"] == {"corpus"}), key=weight)
+    ranked = both + [
+        e for pair in itertools.zip_longest(graph_only, corpus_only) for e in pair if e
+    ]
+    return [{**e, "sources": sorted(e["sources"])} for e in ranked[:MAX_CANDIDATES]]
+
+
+async def discover_drugs(
+    task: Task, tools: Mapping[str, Any], stats: RunStatsCollector
+) -> Discovery:
+    """Always run drugs_targeting plus the discovery corpus searches for a drug_target task.
+
+    Graph hits and drugs annotated in the corpus hits are merged into one candidate list,
+    so drug classes the graph misses (e.g. statins, salicylates) still reach the specialist.
+    """
+    target = str(task.drug_target)
+    calls: list[tuple[str, dict[str, Any]]] = [
+        ("drugs_targeting", {"target": target, "approved_only": task.approved_only, "limit": 20}),
+        *(
+            ("search_corpus", {"query": q.format(target=target), "k": DISCOVERY_K,
+                               "mode": "hybrid_rerank"})
+            for q in DISCOVERY_QUERIES
+        ),
+    ]  # fmt: skip
+    if "search_pubmed" in tools:
+        calls.append(
+            ("search_pubmed", {"query": DISCOVERY_PUBMED_QUERY.format(target=target),
+                               "max_results": 10})
+        )  # fmt: skip
+    results = await asyncio.gather(*(_run_tool(tools, n, a, stats, task.id) for n, a in calls))
+    pmids = list(
+        dict.fromkeys(
+            str(h["pmid"]) for (n, _), r in zip(calls, results, strict=True)
+            if n == "search_corpus" for h in r.get("hits", [])
+        )
+    )  # fmt: skip
+    mentioned: dict[str, Any] = {}
+    if pmids:
+        # unfiltered: approval is applied in merge_candidates (keeps unphased drug classes)
+        args = {"pmids": pmids, "approved_only": False, "limit": 50}
+        mentioned = await _run_tool(tools, "drugs_mentioned", args, stats, task.id)
+        calls.append(("drugs_mentioned", args))
+        results.append(mentioned)
+    evidence: dict[str, Evidence] = {}
+    blocks: list[str] = []
+    for (name, args), result in zip(calls, results, strict=True):
+        items = extract_evidence(name, result, task.id, args=args)
+        evidence.update({e["key"]: e for e in items})
+        blocks.append(
+            wrap_untrusted(render_for_model(name, result, items), source=name, ref=task.id)
+        )
+    graph_result = results[0] if "error" not in results[0] else {}
+    candidates = merge_candidates(
+        graph_result, mentioned if "error" not in mentioned else {}, task.approved_only
+    )
+    listing = "; ".join(
+        f"{c['name']} ({'+'.join(c['sources'])}"
+        + (
+            f", max_phase {c['max_phase']}"
+            if c.get("max_phase") is not None
+            else ", drug class or phase unknown"
+        )
+        + ")"
+        for c in candidates
+    )
+    summary = f"Candidate drugs for {target} (graph + corpus union): {listing or 'none found'}"
+    # Drug names come from third-party data, so the candidate list is wrapped as well.
+    prompt = (
+        f"Discovery results (already run for you: drugs_targeting, "
+        f"{len(DISCOVERY_QUERIES)} corpus searches and a PubMed search; do not repeat "
+        "them).\n"
+        f"{wrap_untrusted(summary, source='discovery', ref=task.id)}\n"
+        "Cover every plausible candidate in your findings, including drug classes found only "
+        "in the corpus; drop generic metabolites or reagents. Use further searches only to "
+        "fill gaps.\n\n" + "\n\n".join(blocks)
+    )
+    return Discovery(evidence, candidates, prompt, summary)
+
+
 # --- specialists -----------------------------------------------------------------------
 def make_specialist(
     kind: str, deps: AgentDeps
@@ -188,32 +387,32 @@ def make_specialist(
         if deps.on_specialist_start is not None:
             deps.on_specialist_start(task.id)
         stats = RunStatsCollector()
+        role = deps.specialist_for(kind)
         tools = {t.name: t for t in deps.tools.tools_for(kind)}
-        bound = (
-            deps.specialist.model.bind_tools(list(tools.values()))
-            if tools
-            else deps.specialist.model
-        )
+        bound = role.model.bind_tools(list(tools.values())) if tools else role.model
         notes = "\n\n".join(
             wrap_untrusted(n["summary"], source="specialist_notes", ref=n["task_id"])
             for n in inp["dependency_notes"]
         )
+        evidence: dict[str, Evidence] = {}
+        computed_count = 0
+        discovery: Discovery | None = None
+        if kind == "literature" and task.drug_target and set(tools) >= DISCOVERY_TOOLS:
+            discovery = await discover_drugs(task, tools, stats)
+            evidence.update(discovery.evidence)
         messages: list[BaseMessage] = [
             SystemMessage(prompts.SPECIALISTS[kind]),
             HumanMessage(
                 f"Overall question: {inp['question']}\n\nYour task ({task.id}): "
                 f"{task.description}"
                 + (f"\n\nResults from earlier tasks:\n{notes}" if notes else "")
+                + (f"\n\n{discovery.prompt}" if discovery else "")
             ),
         ]
-        evidence: dict[str, Evidence] = {}
-        computed_count = 0
         final: AIMessage | None = None
         steps = 0
         for steps in range(1, deps.max_steps + 1):  # noqa: B007
-            ai = await _invoke(
-                deps, deps.specialist, bound, messages, f"specialist:{kind}", stats, task.id
-            )
+            ai = await _invoke(deps, role, bound, messages, f"specialist:{kind}", stats, task.id)
             messages.append(ai)
             if not ai.tool_calls:
                 final = ai
@@ -253,8 +452,8 @@ def make_specialist(
             )
             final = await _invoke(
                 deps,
-                deps.specialist,
-                deps.specialist.model,
+                role,
+                role.model,
                 messages,
                 f"specialist:{kind}",
                 stats,
@@ -264,7 +463,7 @@ def make_specialist(
             task_id=task.id,
             kind=kind,
             status="done",
-            summary=message_text(final),
+            summary=message_text(final) + (f"\n\n{discovery.summary}" if discovery else ""),
             evidence_keys=list(evidence),
             steps=steps,
             error=None,

@@ -147,3 +147,16 @@ async def paths(
 async def evidence(edge_id: str, limit: int = 10) -> dict[str, Any]:
     """The supporting papers (PMID, title, year, URL) for one edge id from another tool."""
     return await _call(get_service().evidence(edge_id, limit))
+
+
+@mcp.tool()
+@tool_errors
+async def drugs_mentioned(
+    pmids: list[str], approved_only: bool = False, limit: int = 30
+) -> dict[str, Any]:
+    """Drugs annotated (PubTator3) in the given papers, e.g. the PMIDs of a corpus search.
+
+    Useful to turn search hits into a candidate drug list; ``approved_only`` keeps drugs
+    with ChEMBL max_phase >= 4. Mentions are not mechanisms: check the abstracts.
+    """
+    return await _call(get_service().drugs_mentioned(pmids, approved_only, limit))

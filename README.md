@@ -179,7 +179,13 @@ list-price cost per call.
 Models: `LLM_PROVIDER` (gemini|ollama), `GEMINI_MODEL` (planner/synthesizer, default
 `gemini-3.5-flash`), `GEMINI_FAST_MODEL` (specialists, default `gemini-3.5-flash-lite`),
 `OLLAMA_MODEL`, or per-role `PLANNER_MODEL` / `SPECIALIST_MODEL` / `SYNTH_MODEL` as
-`provider:model`. Free-tier 429s are retried with backoff; an exhausted daily quota stops the
+`provider:model`; `LITERATURE_MODEL` / `CHEMISTRY_MODEL` / `ANALYSIS_MODEL` override the
+specialist model for one kind (ignored with `--provider`).
+
+The planner only adds chemistry/analysis tasks when the question asks for properties, BBB,
+drug-likeness or another computation. A literature task with `drug_target` (e.g. "which
+drugs act on AMPK") always runs `drugs_targeting`, three corpus searches and a PubMed
+search, and passes on the union of graph hits and drugs annotated in the corpus hits. Free-tier 429s are retried with backoff; an exhausted daily quota stops the
 run with a clear message and the run can be resumed later.
 
 ## Development

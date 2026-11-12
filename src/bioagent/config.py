@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     planner_model: str | None = None
     specialist_model: str | None = None
     synth_model: str | None = None
+    # Per-specialist overrides of SPECIALIST_MODEL, e.g. LITERATURE_MODEL=gemini:gemini-3.5-flash
+    literature_model: str | None = None
+    chemistry_model: str | None = None
+    analysis_model: str | None = None
     llm_timeout_s: float = 120.0
     llm_max_retries: int = 5
 

@@ -45,6 +45,8 @@ from tests.agent_fakes import (
 )
 
 SPEC = ModelSpec("ollama", "fake")
+# Asks for computation too, so planned chemistry/analysis tasks are kept.
+MIXED_Q = "Q? Also compute the molecular properties."
 
 
 def synth_responder(text: str) -> Any:
@@ -64,7 +66,7 @@ def make_deps(
 
 
 async def run_graph(
-    deps: AgentDeps, tmp_path: Path, question: str = "Q?", run_id: str = "r1"
+    deps: AgentDeps, tmp_path: Path, question: str = MIXED_Q, run_id: str = "r1"
 ) -> dict[str, Any]:
     return dict(await execute(deps, tmp_path / "ck.sqlite", run_id, question))
 
@@ -406,7 +408,7 @@ async def test_failed_run_resumes_without_redoing_completed_tasks(tmp_path: Path
 
     settings = settings_for(tmp_path)
     with pytest.raises(RuntimeError, match="simulated crash") as excinfo:
-        await ask(settings, "Q?", tools_factory=tools_factory, deps_factory=deps_factory)
+        await ask(settings, MIXED_Q, tools_factory=tools_factory, deps_factory=deps_factory)
     run_id = next(n.split("=")[1] for n in excinfo.value.__notes__ if n.startswith("run_id="))
     assert sorted(starts) == ["t1", "t2", "t3"]
     tools_before = [name for name, _ in log.calls]
@@ -484,8 +486,8 @@ def test_prompts_route_repurposing_through_paths_and_evidence() -> None:
     lit = prompts.SPECIALISTS["literature"]
     for needle in ("paths(source=D, target=Y", "evidence(edge_id)", "primary studies"):
         assert needle in lit
-    assert "drugs_targeting(T" in lit and "statins" in lit  # broad discovery kept
-    assert "paths(D -> Y)" in prompts.PLANNER and "statins" in prompts.PLANNER
+    assert "drugs_targeting(T" in lit and "literature-only drugs" in lit  # broad discovery
+    assert "paths(D -> Y)" in prompts.PLANNER and "drug_target=T" in prompts.PLANNER
 
 
 async def test_repurposing_task_cites_direct_edge_papers(tmp_path: Path) -> None:
@@ -535,3 +537,99 @@ def test_select_evidence_shares_budget_across_tasks() -> None:
     assert len({e["pmid"] for e in chosen}) == len(chosen)  # one item per paper
     t1_sources = [e["source"] for e in chosen if e["task_id"] == "t1"][:4]
     assert t1_sources == ["corpus", "graph", "corpus", "graph"]  # abstracts not pushed out
+
+
+# --- planner task-kind gating, discovery, per-specialist models (follow-ups) -------------
+def test_enforce_task_kinds_drops_unrequested_computation() -> None:
+    from bioagent.agents.nodes import asks_for_computation, enforce_task_kinds
+    from bioagent.agents.state import Task
+
+    tasks = [
+        Task(id="t1", kind="literature", description="find drugs"),
+        Task(id="t2", kind="literature", description="repurposing", depends_on=["t1", "t3"]),
+        Task(id="t3", kind="chemistry", description="BBB estimates", depends_on=["t1"]),
+    ]
+    q = "Which approved drugs act on AMPK, and could any be repurposed for glioblastoma?"
+    kept, notes = enforce_task_kinds(tasks, q)
+    assert [t.id for t in kept] == ["t1", "t2"] and kept[1].depends_on == ["t1"]
+    assert notes and "t3" in notes[0]
+    for asked in ("Compare metformin and TMZ drug-likeness", "Is it BBB permeable?",
+                  "What is the TPSA of metformin?"):  # fmt: skip
+        assert asks_for_computation(asked)
+        assert enforce_task_kinds(tasks, asked) == (tasks, [])
+    only_chem = [Task(id="t1", kind="chemistry", description="x")]
+    fallback, notes = enforce_task_kinds(only_chem, q)
+    assert [(t.kind, t.description) for t in fallback] == [("literature", q)]
+
+
+async def test_planner_gating_applies_in_the_graph(tmp_path: Path) -> None:
+    deps = make_deps(
+        [plan(("t1", "literature", []), ("t2", "chemistry", ["t1"]))],
+        scripted_specialist({}),
+        "Answer.",
+        fake_tools(ToolLog()),
+    )
+    state = await run_graph(deps, tmp_path, question="Which drugs act on AMPK?")
+    assert [t["kind"] for t in state["plan"]] == ["literature"]
+    assert state["plan_notes"] and set(state["results"]) == {"t1"}
+
+
+def test_resolve_name_is_not_citable_evidence() -> None:
+    result = {"cid": 4091, "canonical_smiles": "CN(C)C(=N)N=C(N)N"}
+    assert extract_evidence("resolve_name", result, "t1", args={"name": "metformin"}) == []
+    computed = extract_evidence("molecular_properties", {"tpsa": 91.5}, "t1", args={"x": "C"})
+    assert computed and computed[0]["source"] == "rdkit"
+
+
+async def test_drug_target_task_runs_deterministic_discovery(tmp_path: Path) -> None:
+    from bioagent.agents.nodes import DISCOVERY_QUERIES
+
+    log = ToolLog()
+    queries = [q.format(target="AMPK") for q in DISCOVERY_QUERIES]
+    corpus = {q: [corpus_hit(str(500 + i), f"hit {i}")] for i, q in enumerate(queries)}
+    discovery_plan = {
+        "tasks": [{"id": "t1", "kind": "literature", "description": "drugs acting on AMPK",
+                   "depends_on": [], "drug_target": "AMPK", "approved_only": True}],
+        "rationale": "test",
+    }  # fmt: skip
+    deps = make_deps(
+        [discovery_plan],
+        scripted_specialist({}),  # the model makes no tool calls of its own
+        "Answer.",
+        fake_tools(log, corpus=corpus),
+    )
+    state = await run_graph(deps, tmp_path, question="Which approved drugs act on AMPK?")
+    names = [n for n, _ in log.calls]
+    assert names.count("search_corpus") == len(DISCOVERY_QUERIES) >= 2
+    assert names[-1] == "drugs_mentioned" and "drugs_targeting" in names
+    targeting = next(a for n, a in log.calls if n == "drugs_targeting")
+    assert targeting["target"] == "AMPK" and targeting["approved_only"] is True
+    mentioned = next(a for n, a in log.calls if n == "drugs_mentioned")
+    assert mentioned["pmids"] == ["500", "501", "502"] and mentioned["approved_only"] is False
+    summary = state["results"]["t1"]["summary"]
+    for drug in ("Metformin (corpus+graph", "Simvastatin (corpus", "Aspirin (corpus", "acadesine"):
+        assert drug in summary  # union of graph and corpus candidates is passed on
+    prompt = str(deps.specialist.model.seen[0][1].content)  # type: ignore[attr-defined]
+    assert "do not repeat them" in prompt and prompt.count(OPEN) == prompt.count(CLOSE)
+    assert {"500", "501", "502", "111"} <= {e["pmid"] for e in state["evidence"].values()}
+
+
+async def test_per_specialist_model_override(tmp_path: Path) -> None:
+    from bioagent.llm.providers import role_specs
+
+    settings = Settings(_env_file=None, literature_model="gemini:gemini-3.5-flash")
+    specs = role_specs(settings)
+    assert str(specs.specialist_for("literature")) == "gemini:gemini-3.5-flash"
+    assert str(specs.specialist_for("chemistry")) == "gemini:gemini-3.5-flash-lite"
+    assert specs.describe()["specialist:literature"] == "gemini:gemini-3.5-flash"
+    lit_model = FakeChatModel(respond=synth_responder("literature notes"))
+    deps = make_deps(
+        [plan(("t1", "literature", []), ("t2", "chemistry", []))],
+        synth_responder("chemistry notes"),
+        "Answer.",
+        fake_tools(ToolLog()),
+        specialists={"literature": RoleModel(SPEC, lit_model)},
+    )
+    state = await run_graph(deps, tmp_path)
+    assert state["results"]["t1"]["summary"] == "literature notes"
+    assert state["results"]["t2"]["summary"] == "chemistry notes"
