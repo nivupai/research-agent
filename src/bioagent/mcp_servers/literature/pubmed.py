@@ -165,8 +165,13 @@ class PubMedClient:
         retstart: int = 0,
         min_year: int | None = None,
         max_year: int | None = None,
+        sort: str | None = None,
     ) -> dict[str, Any]:
-        """Run esearch with ``usehistory=y``; returns the ``esearchresult`` JSON object."""
+        """Run esearch with ``usehistory=y``; returns the ``esearchresult`` JSON object.
+
+        ``sort`` is passed through (e.g. ``"relevance"`` or ``"pub_date"``); NCBI's default
+        is used when omitted.
+        """
         date: dict[str, Any] = {}
         if min_year is not None or max_year is not None:
             date = {
@@ -182,6 +187,7 @@ class PubMedClient:
                 usehistory="y",
                 retmax=retmax,
                 retstart=retstart,
+                sort=sort,
                 **date,
             ),
         )

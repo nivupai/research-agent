@@ -16,8 +16,14 @@ dist/
 .coverage
 htmlcov/
 
-# Data
+# Data, indexes, eval outputs and model caches (configs/ is committed)
 data/
+results/
+.cache/
+.hf_cache/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 
 # OS / editors
 .DS_Store

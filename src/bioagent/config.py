@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -26,6 +27,14 @@ class Settings(BaseSettings):
     sandbox_timeout_max: int = 120
     sandbox_pids: int = 128
     docker_host: str | None = None
+
+    # Corpus and retrieval (see bioagent.ingest and bioagent.retrieval)
+    corpus_db: Path = Path("data/corpus/corpus.sqlite")
+    index_dir: Path = Path("data/indexes")
+    embed_model: str = "BAAI/bge-small-en-v1.5"
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    embed_device: str | None = None  # auto: mps, then cuda, then cpu
+    embed_batch_size: int = 64
 
 
 @lru_cache(maxsize=1)
