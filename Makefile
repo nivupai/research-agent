@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa smoke
 
 install:
 	uv sync --extra models
@@ -75,6 +75,27 @@ kg-build:
 
 test-neo4j:
 	uv run pytest -m neo4j
+
+# Evaluation suite (see eval/ and "Evaluation suite" in the README)
+eval-set:
+	uv run python scripts/build_eval_set.py
+
+eval-fixture:
+	uv run python scripts/build_eval_fixture.py
+
+# make eval-smoke [REPEATS=2]  /  make eval-full [RESUME=<run_id>]
+eval-smoke: eval-fixture
+	uv run bioagent eval run --suite smoke --repeats $(or $(REPEATS),2) --nli $(if $(RESUME),--resume $(RESUME))
+
+eval-full: eval-fixture
+	uv run bioagent eval run --suite full --repeats $(or $(REPEATS),1) --nli $(if $(RESUME),--resume $(RESUME))
+
+# make eval-calibration RUNS="results/eval/full/<id> results/eval/smoke/<id>"
+eval-calibration:
+	uv run bioagent eval calibration $(RUNS)
+
+judge-kappa:
+	uv run bioagent eval kappa eval/labels/judge_calibration.jsonl
 
 smoke:
 	uv run python scripts/smoke_literature.py

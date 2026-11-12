@@ -1,0 +1,103 @@
+name: Eval gate
+
+# Smoke suite (~25 questions x 2 repeats, flash-lite for every role) against the committed
+# baseline eval/baselines/smoke.json. Runs only when the GEMINI_API_KEY secret is available
+# (never on fork PRs, which get no secrets); add the `skip-eval` label to skip it.
+# Retrieval uses the isolated BM25 eval index built in the job (no Neo4j, no Chroma, no
+# models); see "Evaluation suite" in the README.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "repeats per question"
+        default: "2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      !contains(github.event.pull_request.labels.*.name, 'skip-eval')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      NCBI_API_KEY: ${{ secrets.NCBI_API_KEY }}
+      REPEATS: ${{ github.event.inputs.repeats || '2' }}
+    steps:
+      - name: Check for the Gemini key
+        id: key
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::notice title=Eval gate skipped::GEMINI_API_KEY secret is not available (not configured, or a fork PR)."
+            echo "Eval gate skipped: no GEMINI_API_KEY secret." >> "$GITHUB_STEP_SUMMARY"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+
+      - uses: astral-sh/setup-uv@v5
+        if: steps.key.outputs.present == 'true'
+        with:
+          enable-cache: true
+
+      - name: Install
+        if: steps.key.outputs.present == 'true'
+        run: uv sync --python 3.12
+
+      - name: Cache eval data (PubMedQA rows, fixture index, judge cache)
+        if: steps.key.outputs.present == 'true'
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/eval/raw
+            data/eval/fixture
+            data/eval/cache.sqlite
+          key: eval-data-${{ hashFiles('eval/questions/**', 'eval/fixtures/**', 'src/bioagent/eval/sources.py') }}
+          restore-keys: eval-data-
+
+      - name: Build the eval index
+        if: steps.key.outputs.present == 'true'
+        run: uv run python scripts/build_eval_fixture.py
+
+      - name: Run the smoke suite
+        id: run
+        if: steps.key.outputs.present == 'true'
+        run: |
+          set +e
+          uv run bioagent eval run --suite smoke --repeats "$REPEATS" --run-id "ci-${{ github.run_id }}"
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$code" = "3" ]; then
+            echo "::warning title=Eval paused::Gemini quota exhausted; the gate compares the questions that finished."
+            uv run bioagent eval report "results/eval/smoke/ci-${{ github.run_id }}"
+          elif [ "$code" != "0" ]; then
+            exit "$code"
+          fi
+
+      - name: Compare with the baseline
+        if: steps.key.outputs.present == 'true'
+        run: |
+          cat "results/eval/smoke/ci-${{ github.run_id }}/report.md" >> "$GITHUB_STEP_SUMMARY"
+          uv run bioagent eval compare eval/baselines/smoke.json \
+            "results/eval/smoke/ci-${{ github.run_id }}/report.json" --fail-on-regression
+
+      - name: Upload results
+        if: always() && steps.key.outputs.present == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-smoke-${{ github.run_id }}
+          path: results/eval/smoke/ci-${{ github.run_id }}
+          if-no-files-found: ignore
