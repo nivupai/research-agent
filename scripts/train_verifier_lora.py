@@ -43,9 +43,9 @@ def label_of(pair: Any, source: str) -> str | None:
 def memory_gb(device: str) -> float | None:
     import torch
 
-    if device == "mps":
+    if device.startswith("mps"):
         return round(torch.mps.driver_allocated_memory() / 1e9, 2)
-    if device == "cuda":
+    if device.startswith("cuda"):
         return round(torch.cuda.max_memory_allocated() / 1e9, 2)
     return None
 
@@ -133,7 +133,7 @@ def main() -> None:
             enc, y = batch_tensors([train[i] for i in idx])
             loss = loss_fn(model(**enc).logits.float(), y) / args.accum
             loss.backward()
-            total += float(loss)
+            total += float(loss.detach())
         torch.nn.utils.clip_grad_norm_([p for p in model.parameters() if p.requires_grad], 1.0)
         opt.step()
         sched.step()
