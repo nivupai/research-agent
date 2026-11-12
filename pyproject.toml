@@ -14,6 +14,12 @@ dependencies = [
     "rank-bm25>=0.2.2",
     "chromadb>=1.5.9",
     "pyyaml>=6.0.3",
+    "langgraph>=1.2.20",
+    "langgraph-checkpoint-sqlite>=3.1.3",
+    "langchain-core>=1.8.0",
+    "langchain-google-genai>=4.5.0",
+    "langchain-ollama>=1.1.0",
+    "google-genai>=3.2.0",
 ]
 
 [project.scripts]
@@ -21,6 +27,7 @@ bioagent-literature = "bioagent.mcp_servers.literature.__main__:main"
 bioagent-chemistry = "bioagent.mcp_servers.chemistry.__main__:main"
 bioagent-sandbox = "bioagent.mcp_servers.sandbox.__main__:main"
 bioagent-retrieval = "bioagent.mcp_servers.retrieval.__main__:main"
+bioagent = "bioagent.cli:main"
 
 [project.optional-dependencies]
 models = [
@@ -74,5 +81,6 @@ markers = [
     "live: hits real external APIs (deselect with -m 'not live')",
     "docker: needs a local Docker daemon and the sandbox image (make sandbox-image)",
     "models: loads real sentence-transformers models (needs the `models` extra)",
+    "llm: calls a real LLM (Gemini API or local Ollama)",
 ]
-addopts = "-m 'not live and not docker and not models'"
+addopts = "-m 'not live and not docker and not models and not llm'"
