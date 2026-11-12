@@ -100,6 +100,7 @@ class VerifyConfig:
     policy: Policy = "remove"
     paper_level: bool = True  # a citation covers every retrieved passage of that PMID
     windows_per_citation: int = 8  # NLI only on the windows with most word overlap
+    windowed: bool = True  # False: score whole passages (classifier / LLM backends)
 
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -261,7 +262,12 @@ class ClaimVerifier:
             targets = papers
             pending_nli.append(claim)
             for n, e in targets.items():
-                windows = [w for text in premises(e) for w in passage_windows(text)]
+                texts = premises(e)
+                windows = (
+                    [w for text in texts for w in passage_windows(text)]
+                    if self.config.windowed
+                    else texts
+                )
                 for window in top_windows(windows, claim.text, self.config.windows_per_citation):
                     pairs.append((window, claim.text))
                     slots.append((claim, n, window))

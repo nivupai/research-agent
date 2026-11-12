@@ -33,6 +33,7 @@ bioagent = "bioagent.cli:main"
 
 [project.optional-dependencies]
 models = [
+    "peft>=0.17",
     "sentence-transformers>=6.3.0",
     "transformers>=5.22",
 ]

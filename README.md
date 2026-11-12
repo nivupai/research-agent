@@ -278,6 +278,36 @@ flash-lite calls (most of a free-tier daily quota), so it only runs when started
 label is added and on each later push). It is skipped with a notice if the repository secret
 `GEMINI_API_KEY` is missing (fork PRs never get it). `NCBI_API_KEY` is optional.
 
+## Fine-tuned small claim verifier (`bioagent.finetune`)
+
+```bash
+uv run python scripts/make_verifier_data.py          # pairs, teacher labels, NLI baseline, splits
+uv run python scripts/train_verifier_lora.py --steps 200   # local MPS/CUDA (or the notebook)
+uv run python scripts/eval_verifier.py               # test-split comparison + router curve
+```
+
+* **Pairs** (~3.2k, deduped): claims from saved runs/eval answers with their cited passages,
+  results sentences paired with their own abstract, same-topic passages from other papers
+  (BM25 neighbours), and rule-based perturbations (negation, direction swap, entity swap,
+  changed numbers). Splits are by PMID (no paper in two splits); cross-paper pairs only use
+  papers of the same split.
+* **Labels**: a Gemini teacher (flash-lite, 20 pairs per structured call, cached, resumable,
+  stops cleanly when the quota runs out) labels SUPPORTED / CONTRADICTED / NOT_ENOUGH_INFO;
+  DeBERTa-v3-large NLI is recorded for every pair as a second baseline.
+  `eval/labels/verifier_test_human.jsonl` has 150 test pairs with an empty `human_label` for
+  spot-labelling (teacher-vs-human agreement); no labels are invented.
+* **Model**: Qwen/Qwen3-1.7B (Apache-2.0) with a 3-way classification head and LoRA (r=16) on
+  the attention and MLP projections. A classifier rather than label generation: one forward
+  pass gives class probabilities (needed by the router) and nothing has to be parsed.
+  Adapters go to `models/verifier-lora/` (gitignored) with `training.json`
+  (params, steps, time, peak memory). `notebooks/train_verifier_lora.ipynb` trains the same
+  model on a free Colab/Kaggle T4 in 4-bit.
+* **Backends**: `VERIFIER_BACKEND=nli` (default) | `small_lora` | `llm` | `router`. The router
+  uses the small model and escalates pairs whose top probability is below
+  `VERIFIER_ROUTER_THRESHOLD` to `VERIFIER_LLM_MODEL`; `scripts/eval_verifier.py` picks the
+  cheapest threshold within 1 point of the best val accuracy and writes the curve to
+  `results/verifier/eval.md`.
+
 ## Development
 
 ```bash

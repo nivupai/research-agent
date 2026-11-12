@@ -68,6 +68,12 @@ class Settings(BaseSettings):
     nli_entail_threshold: float = 0.5
     nli_contradiction_threshold: float = 0.5
     verify_policy: Literal["remove", "flag"] = "remove"
+    # Claim scorer: nli (DeBERTa), small_lora (fine-tuned classifier), llm (Gemini) or router
+    # (small model, escalating low-confidence pairs to the LLM); see bioagent.verify.backends
+    verifier_backend: Literal["nli", "small_lora", "llm", "router"] = "nli"
+    verifier_adapter_dir: Path = Path("models/verifier-lora")
+    verifier_router_threshold: float = 0.8
+    verifier_llm_model: str = "gemini:gemini-3.5-flash-lite"
 
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")
