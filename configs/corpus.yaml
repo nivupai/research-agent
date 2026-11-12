@@ -1,0 +1,57 @@
+# PubMed corpus for the BioResearch Agent (~10k abstracts after de-duplication).
+# Each query is combined with `AND <min_year>:3000[pdat] AND hasabstract` and the top
+# `max_results` PMIDs (relevance order) are fetched. PMIDs already stored are skipped, so
+# overlapping queries contribute fewer new records than their cap.
+defaults:
+  min_year: 2000
+  require_abstract: true
+  max_results: 1300
+
+queries:
+  - name: ampk_signalling
+    query: >-
+      "AMP-Activated Protein Kinases"[MeSH] OR AMPK[tiab] OR "AMP-activated protein
+      kinase"[tiab]
+
+  - name: metformin_biguanides
+    query: >-
+      "Metformin"[MeSH] OR "Biguanides"[MeSH] OR metformin[tiab] OR phenformin[tiab] OR
+      buformin[tiab] OR biguanide*[tiab]
+
+  - name: glioblastoma_treatment
+    query: >-
+      ("Glioblastoma"[MeSH] OR glioblastoma[tiab] OR GBM[tiab]) AND (therapy[sh] OR
+      treatment[tiab] OR therapeutic*[tiab] OR "clinical trial"[pt])
+
+  - name: oncology_drug_repurposing
+    query: >-
+      ("Drug Repositioning"[MeSH] OR repurpos*[tiab] OR repositioning[tiab]) AND
+      ("Neoplasms"[MeSH] OR cancer[tiab] OR tumor[tiab] OR tumour[tiab] OR oncolog*[tiab])
+
+  - name: bbb_drug_delivery
+    query: >-
+      ("Blood-Brain Barrier"[MeSH] OR "blood-brain barrier"[tiab] OR BBB[tiab]) AND
+      ("Drug Delivery Systems"[MeSH] OR "drug delivery"[tiab] OR penetration[tiab] OR
+      permeability[tiab] OR "brain uptake"[tiab])
+
+  - name: temozolomide
+    query: >-
+      "Temozolomide"[MeSH] OR temozolomide[tiab] OR TMZ[tiab]
+
+  - name: mtor_pi3k_inhibitors
+    query: >-
+      ("MTOR Inhibitors"[MeSH] OR "Phosphoinositide-3 Kinase Inhibitors"[MeSH] OR
+      ((mTOR[tiab] OR PI3K[tiab] OR "phosphoinositide 3-kinase"[tiab]) AND
+      inhibitor*[tiab]) OR everolimus[tiab] OR rapamycin[tiab] OR alpelisib[tiab])
+
+  - name: neurodegeneration_drug_targets
+    query: >-
+      ("Neurodegenerative Diseases"[MeSH] OR neurodegenerat*[tiab] OR "Alzheimer
+      Disease"[MeSH] OR "Parkinson Disease"[MeSH]) AND ("drug target*"[tiab] OR
+      "therapeutic target*"[tiab] OR "Drug Discovery"[MeSH])
+
+  - name: pharmacokinetics_pharmacometrics
+    query: >-
+      ("Pharmacokinetics"[MeSH] OR pharmacokinetic*[tiab] OR pharmacometric*[tiab] OR
+      "population pharmacokinetic*"[tiab] OR PBPK[tiab]) AND (model*[tiab] OR
+      simulation[tiab])

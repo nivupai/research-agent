@@ -11,12 +11,21 @@ dependencies = [
     "pydantic-settings>=2.2",
     "rdkit>=2026.9.2",
     "docker>=7.2.0",
+    "rank-bm25>=0.2.2",
+    "chromadb>=1.5.9",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 bioagent-literature = "bioagent.mcp_servers.literature.__main__:main"
 bioagent-chemistry = "bioagent.mcp_servers.chemistry.__main__:main"
 bioagent-sandbox = "bioagent.mcp_servers.sandbox.__main__:main"
+bioagent-retrieval = "bioagent.mcp_servers.retrieval.__main__:main"
+
+[project.optional-dependencies]
+models = [
+    "sentence-transformers>=6.3.0",
+]
 
 [dependency-groups]
 dev = [
@@ -28,6 +37,7 @@ dev = [
     "pre-commit>=3.7",
     "types-docker>=7.2.0.20261102",
     "types-requests>=2.33.0.20261030",
+    "types-pyyaml>=6.0.12.20261111",
 ]
 
 [build-system]
@@ -53,7 +63,7 @@ packages = ["bioagent"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["respx.*"]
+module = ["respx.*", "rank_bm25.*", "sentence_transformers.*", "torch.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
@@ -63,5 +73,6 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "live: hits real external APIs (deselect with -m 'not live')",
     "docker: needs a local Docker daemon and the sandbox image (make sandbox-image)",
+    "models: loads real sentence-transformers models (needs the `models` extra)",
 ]
-addopts = "-m 'not live and not docker'"
+addopts = "-m 'not live and not docker and not models'"
