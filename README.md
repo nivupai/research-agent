@@ -270,11 +270,13 @@ verdicts are cached in `data/eval/cache.sqlite` by (question, answer hash, judge
 version, kind). Judge calibration: `eval/labels/judge_calibration.jsonl` has a stratified
 sample of 40 judged answers with an empty `human_label` for a person to fill in.
 
-**CI gate** (`.github/workflows/eval.yml`): on pull requests (and `workflow_dispatch`) it builds
-the eval index, runs the smoke suite at repeats=2 on flash-lite and fails on a significant
-accuracy drop against `eval/baselines/smoke.json`; the tables go to the job summary. It runs
-only if the repository secret `GEMINI_API_KEY` exists (fork PRs never get it) and is skipped
-with the `skip-eval` label. `NCBI_API_KEY` is optional (faster efetch).
+**CI gate** (`.github/workflows/eval.yml`, opt-in): it builds the eval index, runs the smoke
+suite at repeats=2 on flash-lite and fails on a significant accuracy drop against
+`eval/baselines/smoke.json`; the tables go to the job summary. One run uses roughly 340
+flash-lite calls (most of a free-tier daily quota), so it only runs when started by hand
+(Actions > Eval gate > Run workflow) or on a pull request with the `run-eval` label (when the
+label is added and on each later push). It is skipped with a notice if the repository secret
+`GEMINI_API_KEY` is missing (fork PRs never get it). `NCBI_API_KEY` is optional.
 
 ## Development
 

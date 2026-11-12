@@ -1,14 +1,16 @@
 name: Eval gate
 
 # Smoke suite (~25 questions x 2 repeats, flash-lite for every role) against the committed
-# baseline eval/baselines/smoke.json. Runs only when the GEMINI_API_KEY secret is available
-# (never on fork PRs, which get no secrets); add the `skip-eval` label to skip it.
+# baseline eval/baselines/smoke.json. Opt-in, because one run uses most of a free-tier daily
+# Gemini quota: it runs on workflow_dispatch, or on a pull request that has the `run-eval`
+# label (when the label is added and on later pushes). It is skipped with a notice when the
+# GEMINI_API_KEY secret is not available (not configured, or a fork PR).
 # Retrieval uses the isolated BM25 eval index built in the job (no Neo4j, no Chroma, no
 # models); see "Evaluation suite" in the README.
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled, unlabeled]
+    types: [opened, synchronize, labeled]
   workflow_dispatch:
     inputs:
       repeats:
@@ -26,7 +28,7 @@ jobs:
   smoke:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      !contains(github.event.pull_request.labels.*.name, 'skip-eval')
+      contains(github.event.pull_request.labels.*.name, 'run-eval')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
