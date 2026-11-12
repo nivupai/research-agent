@@ -8,7 +8,7 @@ local Ollama models, NCBI E-utilities, Europe PMC) and exposed through MCP serve
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-make install            # uv sync + pre-commit hooks
+make install            # uv sync --extra models + pre-commit hooks
 cp .env.example .env    # then fill in your keys (never commit .env)
 ```
 
@@ -80,6 +80,46 @@ base64-encoded (up to 5 files of 512 KB). Every run writes a JSON audit line (co
 limits, outcome, duration) to the `bioagent.sandbox.audit` logger; the code itself is only
 logged at DEBUG.
 
+## Corpus and hybrid retrieval
+
+A local corpus of ~11.5k PubMed abstracts (2000+, abstracts only) on the agent's topics:
+AMPK signalling, metformin/biguanides, glioblastoma treatment, oncology drug repurposing,
+blood-brain barrier delivery, temozolomide, mTOR/PI3K inhibitors, neurodegeneration drug
+targets and pharmacokinetics/pharmacometrics. Queries and per-query caps live in
+`configs/corpus.yaml`.
+
+```bash
+make ingest          # PubMed -> data/corpus/corpus.sqlite (resumable; ~2 min)
+make index           # passages + BM25 + Chroma dense index (incremental; ~2.5 min first run)
+make serve-retrieval # MCP server with the search_corpus tool
+uv run python scripts/search_corpus.py "temozolomide resistance MGMT" -k 5
+```
+
+* **Passages**: title + abstract; abstracts over ~350 tokens are split on sentences into
+  overlapping chunks (`passage_id = pmid:chunk_idx`), each prefixed with the title.
+* **BM25**: rank-bm25 Okapi with a biomedical tokenizer (keeps `ampk`, `pi3k`, `il-6`,
+  `blood-brain` plus its parts), stored as gzipped JSON tokens in `data/indexes/bm25/`.
+* **Dense**: sentence-transformers `EMBED_MODEL` (default `BAAI/bge-small-en-v1.5`, query
+  instruction prefix applied automatically) on MPS/CUDA/CPU, persisted in Chroma
+  (`data/indexes/chroma/`, one collection per model).
+* **Hybrid**: reciprocal rank fusion (k=60) of the BM25 and dense top 100;
+  `hybrid_rerank` reranks the fused top 50 with `RERANK_MODEL` (default
+  `cross-encoder/ms-marco-MiniLM-L-6-v2`; `BAAI/bge-reranker-base` is a heavier
+  alternative). Results carry scores and ranks from every stage and `untrusted_text: true`.
+
+Model-dependent code needs the `models` extra (`uv sync --extra models`); CI runs without it.
+
+### Retrieval evaluation
+
+```bash
+make label-pool      # pool top-20 per mode for configs/retrieval_queries.yaml (50 queries)
+# grade data/labels/pool.jsonl by hand: "grade": 0 / 1 / 2 (leave null to skip)
+make eval-retrieval  # recall@10, nDCG@10, MRR, precision@10, latency p50/p95 per mode
+```
+
+Results are written to `results/retrieval/` as markdown and JSON. No relevance labels are
+shipped; grading is manual.
+
 ## Development
 
 ```bash
@@ -87,5 +127,6 @@ make lint        # ruff check, ruff format --check, mypy
 make test        # unit tests (network mocked with respx)
 make test-live   # tests that hit the real PubMed / Europe PMC / PubChem APIs
 make test-docker # sandbox integration tests (needs Docker + make sandbox-image)
+make test-models # tests that load the real embedding / reranking models
 make smoke       # launch each MCP server over stdio and call every tool
 ```

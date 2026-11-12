@@ -1,0 +1,65 @@
+# Seed queries for retrieval evaluation. No relevance labels here: run
+# `make label-pool` and grade data/labels/pool.jsonl by hand (0/1/2).
+# type: topical | exact_term (gene symbols, drug names, acronyms) | multi_hop (needs
+# combining two facts, e.g. a mechanism and a disease, or a drug and a delivery barrier)
+queries:
+  # --- AMPK signalling ---
+  - {id: q01, type: topical, query: "How does AMPK sense cellular energy status and regulate metabolism?"}
+  - {id: q02, type: exact_term, query: "LKB1 STK11 phosphorylation of AMPK Thr172"}
+  - {id: q03, type: topical, query: "AMPK activation inhibits mTORC1 through TSC2 and raptor phosphorylation"}
+  - {id: q04, type: exact_term, query: "AICAR and A-769662 direct AMPK activators"}
+  - {id: q05, type: topical, query: "role of AMPK in autophagy induction via ULK1"}
+  # --- metformin / biguanides ---
+  - {id: q06, type: topical, query: "mechanism of action of metformin on mitochondrial complex I"}
+  - {id: q07, type: topical, query: "does metformin act through AMPK-independent mechanisms in the liver?"}
+  - {id: q08, type: exact_term, query: "phenformin versus metformin anticancer potency"}
+  - {id: q09, type: topical, query: "metformin use and cancer incidence in patients with type 2 diabetes"}
+  - {id: q10, type: exact_term, query: "OCT1 SLC22A1 transporter and metformin uptake"}
+  - {id: q11, type: topical, query: "lactic acidosis risk with metformin in renal impairment"}
+  # --- glioblastoma treatment ---
+  - {id: q12, type: topical, query: "standard of care for newly diagnosed glioblastoma Stupp protocol radiotherapy plus temozolomide"}
+  - {id: q13, type: exact_term, query: "bevacizumab in recurrent glioblastoma overall survival"}
+  - {id: q14, type: exact_term, query: "IDH1 R132H mutation prognosis in glioma"}
+  - {id: q15, type: topical, query: "tumor treating fields efficacy in glioblastoma"}
+  - {id: q16, type: topical, query: "immunotherapy and checkpoint inhibitors for glioblastoma"}
+  - {id: q17, type: exact_term, query: "EGFRvIII targeted therapy glioblastoma"}
+  # --- drug repurposing in oncology ---
+  - {id: q18, type: topical, query: "computational approaches for drug repurposing in cancer"}
+  - {id: q19, type: exact_term, query: "chloroquine hydroxychloroquine autophagy inhibition repurposed for cancer"}
+  - {id: q20, type: topical, query: "statins as repurposed anticancer agents"}
+  - {id: q21, type: exact_term, query: "disulfiram copper complex anticancer activity"}
+  - {id: q22, type: multi_hop, query: "clinical trials of repurposed non-oncology drugs in glioblastoma"}
+  # --- blood-brain barrier drug delivery ---
+  - {id: q23, type: topical, query: "physicochemical properties that predict blood-brain barrier permeability of small molecules"}
+  - {id: q24, type: exact_term, query: "P-glycoprotein ABCB1 efflux at the blood-brain barrier"}
+  - {id: q25, type: topical, query: "focused ultrasound with microbubbles to open the blood-brain barrier"}
+  - {id: q26, type: topical, query: "nanoparticle delivery across the blood-brain barrier for brain tumors"}
+  - {id: q27, type: exact_term, query: "transferrin receptor antibody shuttle brain delivery"}
+  - {id: q28, type: exact_term, query: "CNS MPO score and brain penetration"}
+  # --- temozolomide ---
+  - {id: q29, type: exact_term, query: "MGMT promoter methylation predicts temozolomide response"}
+  - {id: q30, type: topical, query: "mechanisms of acquired temozolomide resistance beyond MGMT such as mismatch repair loss"}
+  - {id: q31, type: topical, query: "temozolomide hematologic toxicity and myelosuppression"}
+  - {id: q32, type: exact_term, query: "PARP inhibitor olaparib combined with temozolomide"}
+  - {id: q33, type: topical, query: "temozolomide pharmacokinetics and cerebrospinal fluid penetration"}
+  # --- mTOR / PI3K inhibitors ---
+  - {id: q34, type: exact_term, query: "everolimus in subependymal giant cell astrocytoma"}
+  - {id: q35, type: topical, query: "feedback activation of AKT after mTORC1 inhibition with rapalogs"}
+  - {id: q36, type: exact_term, query: "alpelisib PIK3CA-mutant breast cancer hyperglycemia"}
+  - {id: q37, type: multi_hop, query: "brain-penetrant PI3K/mTOR inhibitors for glioblastoma"}
+  - {id: q38, type: exact_term, query: "PTEN loss and PI3K pathway activation"}
+  # --- neurodegeneration drug targets ---
+  - {id: q39, type: topical, query: "emerging therapeutic targets in Alzheimer's disease beyond amyloid"}
+  - {id: q40, type: exact_term, query: "LRRK2 kinase inhibitors in Parkinson's disease"}
+  - {id: q41, type: topical, query: "targeting tau aggregation as a therapeutic strategy"}
+  - {id: q42, type: exact_term, query: "TREM2 microglia drug target neurodegeneration"}
+  # --- pharmacokinetics / pharmacometrics ---
+  - {id: q43, type: topical, query: "population pharmacokinetic modelling with NONMEM covariate analysis"}
+  - {id: q44, type: topical, query: "physiologically based pharmacokinetic models to predict brain exposure"}
+  - {id: q45, type: topical, query: "exposure-response modelling in oncology dose selection"}
+  - {id: q46, type: exact_term, query: "CYP3A4 drug-drug interactions in PBPK models"}
+  # --- multi-hop ---
+  - {id: q47, type: multi_hop, query: "could metformin's AMPK activation sensitise glioblastoma to temozolomide?"}
+  - {id: q48, type: multi_hop, query: "is metformin able to cross the blood-brain barrier at therapeutic concentrations?"}
+  - {id: q49, type: multi_hop, query: "which mTOR inhibitors reach effective concentrations in brain tumour tissue?"}
+  - {id: q50, type: multi_hop, query: "repurposed drugs that inhibit both mTOR signalling and neuroinflammation in neurodegeneration"}
