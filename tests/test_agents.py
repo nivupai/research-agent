@@ -22,6 +22,7 @@ from bioagent.agents.nodes import (
 from bioagent.agents.runner import ask, execute
 from bioagent.agents.state import Evidence, Plan
 from bioagent.agents.tools import (
+    GRAPH_TOOLS,
     TOOL_SCOPES,
     StaticToolProvider,
     extract_evidence,
@@ -32,6 +33,7 @@ from bioagent.cli import format_report
 from bioagent.config import Settings
 from bioagent.llm.providers import ModelSpec, RoleModels
 from tests.agent_fakes import (
+    GRAPH_DRUGS_RESULT,
     FakeChatModel,
     ToolLog,
     call,
@@ -155,7 +157,75 @@ def test_tool_scopes_are_disjoint_and_static_provider_filters() -> None:
     provider = StaticToolProvider(fake_tools(ToolLog()))
     assert {t.name for t in provider.tools_for("literature")} == lit
     assert {t.name for t in provider.tools_for("analysis")} == {"run_python"}
-    assert provider.tools_for("graph") == []  # graph_query hook not implemented yet
+    assert {t.name for t in provider.tools_for("graph")} == set(GRAPH_TOOLS)
+    assert set(GRAPH_TOOLS) <= lit  # the literature specialist owns the graph tools
+
+
+def test_graph_evidence_cites_pmids_and_chembl() -> None:
+    items = extract_evidence("drugs_targeting", GRAPH_DRUGS_RESULT, "t1")
+    by_source = {e["source"]: e for e in items}
+    lit = [e for e in items if e["source"] == "graph"]
+    assert [e["pmid"] for e in lit] == ["111", "222"]
+    assert lit[0]["title"] == "Metformin activates AMPK" and lit[0]["untrusted"]
+    assert "Metformin stimulates PRKAA2" in lit[0]["text"] and not lit[0]["computed"]
+    chembl = by_source["chembl"]
+    assert chembl["pmid"] is None and chembl["passage_id"] == "CHEMBL483849"
+    assert "ACTIVATOR" in chembl["text"] and "not approved" in chembl["text"]
+    rendered = render_for_model("drugs_targeting", GRAPH_DRUGS_RESULT, items)
+    assert "PMID 111" in rendered and "notice" not in rendered
+    _, cites, _ = map_citations("A [1]. B [3].", items)
+    assert cites[0]["url"] == "https://pubmed.ncbi.nlm.nih.gov/111/"
+    assert cites[1]["url"] == "https://www.ebi.ac.uk/chembl/explore/compound/CHEMBL483849"
+
+
+def test_graph_evidence_for_paths_and_neighbors() -> None:
+    path_result = {
+        "paths": [
+            {
+                "nodes": [
+                    {"id": "D1", "name": "Metformin"},
+                    {"id": "G1", "name": "MTOR"},
+                    {"id": "X1", "name": "Glioblastoma"},
+                ],
+                "edges": [
+                    {"type": "NEGATIVELY_CORRELATES", "from": "D1", "to": "G1",
+                     "source": "pubtator", "evidence_count": 64, "pmids": ["1"]},
+                    {"type": "ASSOCIATED_WITH", "from": "G1", "to": "X1",
+                     "source": "pubtator", "evidence_count": 48, "pmids": ["1", "2"]},
+                ],
+            }
+        ]
+    }  # fmt: skip
+    items = extract_evidence("paths", path_result, "t2")
+    assert [e["pmid"] for e in items] == ["1", "2"]
+    assert "Metformin - MTOR - Glioblastoma" in items[0]["text"]
+    assert items[0]["text"].count("text-mined relation") == 2  # both edges cite PMID 1
+    nb = {
+        "entity": {"name": "MGMT"},
+        "edges": [{"type": "CO_OCCURS", "direction": "in", "source": "pubtator",
+                   "evidence_count": 3, "pmids": ["9"], "neighbor": {"name": "Temozolomide"}}],
+    }  # fmt: skip
+    (item,) = extract_evidence("neighbors", nb, "t3")
+    assert "Temozolomide and MGMT are co-mentioned" in item["text"]
+    assert extract_evidence("drugs_targeting", {"error": "down"}, "t1") == []
+
+
+async def test_literature_specialist_graph_claims_reach_synthesizer(tmp_path: Path) -> None:
+    log = ToolLog()
+    script = {"t1": [[call("drugs_targeting", {"query": "AMPK"})]]}
+    deps = make_deps(
+        [plan(("t1", "literature", []))],
+        scripted_specialist(script),
+        "Metformin is reported to stimulate AMPK [2].",
+        fake_tools(log),
+    )
+    state = await run_graph(deps, tmp_path)
+    assert [name for name, _ in log.calls] == ["drugs_targeting"]
+    synth_human = str(deps.synth.model.seen[0][1].content)  # type: ignore[attr-defined]
+    assert "CHEMBL CURATED RECORD" in synth_human
+    assert "KNOWLEDGE-GRAPH RELATION" in synth_human
+    cited = state["citations"][0]
+    assert cited["source"] in ("graph", "chembl")
 
 
 async def test_specialist_cannot_call_other_specialists_tools(tmp_path: Path) -> None:

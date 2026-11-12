@@ -28,7 +28,12 @@ from bioagent.agents.state import (
     Task,
     TaskResult,
 )
-from bioagent.agents.tools import ToolProvider, extract_evidence, render_for_model
+from bioagent.agents.tools import (
+    CHEMBL_COMPOUND_URL,
+    ToolProvider,
+    extract_evidence,
+    render_for_model,
+)
 from bioagent.agents.untrusted import wrap_untrusted
 from bioagent.llm.providers import ModelSpec, ainvoke_with_stats
 from bioagent.llm.stats import RunStatsCollector
@@ -295,6 +300,12 @@ def render_evidence(items: list[Evidence], chars: int = EVIDENCE_CHARS_FOR_SYNTH
     for n, e in enumerate(items, start=1):
         if e["computed"]:
             header = f"[{n}] COMPUTED ESTIMATE from {e['source']} ({e['title']})"
+        elif e["source"] == "chembl":
+            header = f"[{n}] CHEMBL CURATED RECORD ({e['title']})"
+        elif e["source"] == "graph":
+            header = (
+                f"[{n}] PMID {e['pmid']} ({e['year']}) KNOWLEDGE-GRAPH RELATION from this paper"
+            )
         else:
             header = f"[{n}] PMID {e['pmid'] or '-'} ({e['year']}) {e['journal'] or ''}".strip()
         text = e["text"][:chars]
@@ -314,6 +325,14 @@ def _numbers(group: str) -> list[int]:
         elif part.strip().isdigit():
             out.append(int(part))
     return out
+
+
+def _citation_url(e: Evidence) -> str | None:
+    if e["pmid"]:
+        return PUBMED_URL.format(pmid=e["pmid"])
+    if e["source"] == "chembl" and e["passage_id"]:
+        return CHEMBL_COMPOUND_URL.format(chembl_id=e["passage_id"])
+    return None
 
 
 def map_citations(answer: str, items: list[Evidence]) -> tuple[str, list[Citation], list[int]]:
@@ -347,7 +366,7 @@ def map_citations(answer: str, items: list[Evidence]) -> tuple[str, list[Citatio
                 pmid=e["pmid"],
                 title=e["title"],
                 year=e["year"],
-                url=PUBMED_URL.format(pmid=e["pmid"]) if e["pmid"] else None,
+                url=_citation_url(e),
                 computed=e["computed"],
                 source=e["source"],
             )
