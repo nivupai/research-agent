@@ -475,3 +475,37 @@ def test_extract_evidence_variants() -> None:
     assert "notice" not in comp[0]["text"]
     assert extract_evidence("search_corpus", {"error": "boom"}, "t1") == []
     assert render_for_model("search_corpus", {"error": "boom"}, []) == "Tool error: boom"
+
+
+def test_prompts_route_repurposing_through_paths_and_evidence() -> None:
+    from bioagent.agents import prompts
+
+    lit = prompts.SPECIALISTS["literature"]
+    for needle in ("paths(source=D, target=Y", "evidence(edge_id)", "primary studies"):
+        assert needle in lit
+    assert "drugs_targeting(T" in lit and "statins" in lit  # broad discovery kept
+    assert "paths(D -> Y)" in prompts.PLANNER and "statins" in prompts.PLANNER
+
+
+async def test_repurposing_task_cites_direct_edge_papers(tmp_path: Path) -> None:
+    log = ToolLog()
+    edge = "TREATS|MESH:D008687|MESH:D005909"
+    script = {
+        "t1": [
+            [call("paths", {"query": "metformin->glioblastoma"})],
+            [call("evidence", {"query": edge})],
+        ]
+    }
+    deps = make_deps(
+        [plan(("t1", "literature", []))],
+        scripted_specialist(script),
+        "Metformin reduced GBM cell growth [1] and enhanced temozolomide [2].",
+        fake_tools(log),
+    )
+    state = await run_graph(deps, tmp_path)
+    assert [name for name, _ in log.calls] == ["paths", "evidence"]
+    pmids = {e["pmid"] for e in state["evidence"].values()}
+    assert {"25867026", "29334602"} <= pmids
+    synth_human = str(deps.synth.model.seen[0][1].content)  # type: ignore[attr-defined]
+    assert "metformin treats glioblastoma" in synth_human.lower()
+    assert {c["pmid"] for c in state["citations"]} == {"25867026", "29334602"}

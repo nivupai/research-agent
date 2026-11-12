@@ -174,9 +174,34 @@ def fake_tools(
         make("find_entity", lambda a: {"untrusted": True, "entities": []}),
         make("neighbors", lambda a: {"untrusted": True, "edges": []}),
         make("drugs_targeting", lambda a: GRAPH_DRUGS_RESULT),
-        make("paths", lambda a: {"untrusted": True, "paths": []}),
-        make("evidence", lambda a: {"untrusted": True, "evidence": []}),
+        make("paths", lambda a: GRAPH_PATHS_RESULT),
+        make("evidence", lambda a: GRAPH_EVIDENCE_RESULT),
     ]
+
+
+GRAPH_PATHS_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "paths": [
+        {"hops": 1,
+         "nodes": [{"id": "MESH:D008687", "name": "Metformin"},
+                   {"id": "MESH:D005909", "name": "Glioblastoma"}],
+         "edges": [{"edge_id": "TREATS|MESH:D008687|MESH:D005909", "type": "TREATS",
+                    "from": "MESH:D008687", "to": "MESH:D005909", "source": "pubtator",
+                    "evidence_count": 17, "pmids": ["25867026", "29334602"]}]},
+    ],
+    "papers": {"25867026": {"title": "Metformin inhibits growth of human glioblastoma cells",
+                            "year": 2015}},
+}  # fmt: skip
+
+GRAPH_EVIDENCE_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "edge": {"edge_id": "TREATS|MESH:D008687|MESH:D005909", "type": "TREATS",
+             "source": "pubtator", "evidence_count": 17, "pmids": ["25867026", "29334602"]},
+    "source_entity": {"name": "Metformin"},
+    "target_entity": {"name": "Glioblastoma"},
+    "evidence": [{"pmid": "29334602", "title": "High-Dose Metformin Plus Temozolomide",
+                  "year": 2018}],
+}  # fmt: skip
 
 
 GRAPH_DRUGS_RESULT: dict[str, Any] = {
