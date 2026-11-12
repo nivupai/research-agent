@@ -373,3 +373,19 @@ def test_calibration_sheet_and_kappa(tmp_path: Path) -> None:
     assert answer["agreement"] == 1.0 and math.isclose(answer["kappa"]["mean"], 1.0)
     with pytest.raises(ValueError, match="human_label must be one of"):
         kappa_report([{**labelled[0], "human_label": "maybe"}])
+
+
+def test_runner_reuses_only_matching_ok_results(tmp_path: Path) -> None:
+    from bioagent.eval.runner import _done, item_path
+
+    it = item()
+    path = item_path(tmp_path, it, 0)
+    assert not _done(path, it, 0, "h1")
+    path.parent.mkdir(parents=True)
+    ok = {"status": "ok", "key": item_key(it.id, it.question, 0, "h1")}
+    path.write_text(json.dumps(ok))
+    assert _done(path, it, 0, "h1")
+    assert not _done(path, it, 0, "h2")  # agent config changed: rerun
+    assert not _done(path, it, 1, "h1")  # other repeat
+    path.write_text(json.dumps({**ok, "status": "error"}))
+    assert not _done(path, it, 0, "h1")  # errors are retried on resume

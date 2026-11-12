@@ -163,7 +163,7 @@ def markdown(report: Mapping[str, Any]) -> str:
 
 def write_report(run_dir: Path, *, b: int = 2000) -> dict[str, Any]:
     report = build_report(run_dir, b=b)
-    (run_dir / "report.json").write_text(json.dumps(report, indent=1))
+    (run_dir / "report.json").write_text(json.dumps(report, indent=1) + "\n")
     (run_dir / "report.md").write_text(markdown(report))
     return report
 

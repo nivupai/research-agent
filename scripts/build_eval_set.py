@@ -421,7 +421,9 @@ def build_suites(seed: int = 5) -> None:
 def validate() -> None:
     items = load_all(ROOT)
     summary = validate_items(items)
-    (ROOT / "eval" / "questions" / "schema.json").write_text(json.dumps(json_schema(), indent=1))
+    (ROOT / "eval" / "questions" / "schema.json").write_text(
+        json.dumps(json_schema(), indent=1) + "\n"
+    )
     suites = yaml.safe_load((ROOT / "eval" / "suites.yaml").read_text())
     known = {i.id for i in items}
     injection_ids = [i for i in suites["smoke"]["ids"] if i.startswith("injection-")]
