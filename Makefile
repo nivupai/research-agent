@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval graph-up graph-down kg-build test-neo4j smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j smoke
 
 install:
 	uv sync --extra models
@@ -59,6 +59,9 @@ serve-sandbox:
 serve-retrieval:
 	uv run python -m bioagent.mcp_servers.retrieval
 
+serve-graph:
+	uv run python -m bioagent.mcp_servers.graph
+
 # Neo4j 5 community on localhost (password from NEO4J_PASSWORD in .env)
 graph-up:
 	docker compose up -d --wait neo4j
@@ -78,3 +81,4 @@ smoke:
 	uv run python scripts/smoke_chemistry.py
 	uv run python scripts/smoke_sandbox.py
 	uv run python scripts/smoke_retrieval.py
+	uv run python scripts/smoke_graph.py

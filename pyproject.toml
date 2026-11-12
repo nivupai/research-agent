@@ -28,6 +28,7 @@ bioagent-literature = "bioagent.mcp_servers.literature.__main__:main"
 bioagent-chemistry = "bioagent.mcp_servers.chemistry.__main__:main"
 bioagent-sandbox = "bioagent.mcp_servers.sandbox.__main__:main"
 bioagent-retrieval = "bioagent.mcp_servers.retrieval.__main__:main"
+bioagent-graph = "bioagent.mcp_servers.graph.__main__:main"
 bioagent = "bioagent.cli:main"
 
 [project.optional-dependencies]
