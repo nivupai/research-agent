@@ -1,1 +1,1 @@
-"""Agent orchestration (placeholder)."""
+"""LangGraph multi-agent pipeline: planner -> parallel specialists -> synthesizer -> verifier."""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -35,6 +36,22 @@ class Settings(BaseSettings):
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     embed_device: str | None = None  # auto: mps, then cuda, then cpu
     embed_batch_size: int = 64
+
+    # LLMs (see bioagent.llm). Role models are "provider:model"; unset roles use the
+    # defaults for LLM_PROVIDER (planner/synth: GEMINI_MODEL, specialists: GEMINI_FAST_MODEL).
+    llm_provider: Literal["gemini", "ollama"] = "gemini"
+    gemini_model: str = "gemini-3.5-flash"
+    gemini_fast_model: str = "gemini-3.5-flash-lite"
+    planner_model: str | None = None
+    specialist_model: str | None = None
+    synth_model: str | None = None
+    llm_timeout_s: float = 120.0
+    llm_max_retries: int = 5
+
+    # Agent runs
+    checkpoint_db: Path = Path("data/checkpoints.sqlite")
+    runs_dir: Path = Path("results/runs")
+    mcp_log_dir: Path = Path("data/logs")
 
 
 @lru_cache(maxsize=1)

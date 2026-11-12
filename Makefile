@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval smoke
 
 install:
 	uv sync --extra models
@@ -24,6 +24,13 @@ test-docker:
 
 test-models:
 	uv run pytest -m models
+
+test-llm:
+	uv run pytest -m llm
+
+# make ask Q="Which approved drugs act on the AMPK pathway?" [PROVIDER=ollama]
+ask:
+	uv run bioagent ask "$(Q)" $(if $(PROVIDER),--provider $(PROVIDER))
 
 ingest:
 	uv run python scripts/ingest_pubmed.py
