@@ -16,6 +16,7 @@ from bioagent.agents.nodes import (
     RoleModel,
     map_citations,
     ready_tasks,
+    select_evidence,
     split_sentences,
     verifier,
 )
@@ -509,3 +510,28 @@ async def test_repurposing_task_cites_direct_edge_papers(tmp_path: Path) -> None
     synth_human = str(deps.synth.model.seen[0][1].content)  # type: ignore[attr-defined]
     assert "metformin treats glioblastoma" in synth_human.lower()
     assert {c["pmid"] for c in state["citations"]} == {"25867026", "29334602"}
+
+
+def test_select_evidence_shares_budget_across_tasks() -> None:
+    """A later task (e.g. repurposing evidence) must not be crowded out by an earlier one."""
+
+    def item(key: str, pmid: str, task: str, source: str) -> Evidence:
+        return {**ev(key, pmid), "task_id": task, "source": source}  # type: ignore[typeddict-item]
+
+    t1 = [item(f"a{i}", f"1{i:03d}", "t1", "graph" if i % 3 else "corpus") for i in range(60)]
+    t2 = [item(f"b{i}", f"2{i:03d}", "t2", "corpus") for i in range(10)]
+    t2.append(item("dup", "1000", "t2", "corpus"))  # same paper as t1's first item
+    state: Any = {
+        "plan": [{"id": "t1"}, {"id": "t2"}],
+        "results": {
+            "t1": {"evidence_keys": [e["key"] for e in t1]},
+            "t2": {"evidence_keys": [e["key"] for e in t2]},
+        },
+        "evidence": {e["key"]: e for e in [*t1, *t2]},
+    }
+    chosen = select_evidence(state, limit=20)
+    per_task = {t: sum(1 for e in chosen if e["task_id"] == t) for t in ("t1", "t2")}
+    assert per_task == {"t1": 10, "t2": 10}
+    assert len({e["pmid"] for e in chosen}) == len(chosen)  # one item per paper
+    t1_sources = [e["source"] for e in chosen if e["task_id"] == "t1"][:4]
+    assert t1_sources == ["corpus", "graph", "corpus", "graph"]  # abstracts not pushed out

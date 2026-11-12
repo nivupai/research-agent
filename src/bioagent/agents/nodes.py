@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
@@ -42,6 +43,7 @@ MAX_SPECIALIST_STEPS = 6
 MAX_EVIDENCE_FOR_SYNTH = 40
 EVIDENCE_CHARS_FOR_SYNTH = 1100
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
+GRAPH_SOURCES = frozenset({"graph", "chembl"})
 
 
 @dataclass
@@ -273,23 +275,37 @@ def make_specialist(
 
 
 # --- synthesizer -----------------------------------------------------------------------
+def _interleave(queues: list[list[Evidence]]) -> list[Evidence]:
+    out: list[Evidence] = []
+    for row in itertools.zip_longest(*queues):
+        out.extend(e for e in row if e is not None)
+    return out
+
+
 def select_evidence(state: AgentState, limit: int = MAX_EVIDENCE_FOR_SYNTH) -> list[Evidence]:
-    """Order evidence by plan order, keep one passage per paper, cap the list."""
+    """Share the evidence budget fairly, keep one passage per paper, cap the list.
+
+    Tasks are interleaved round-robin (in plan order) so an early task with many results
+    cannot crowd out a later one; within a task, full abstracts alternate with
+    knowledge-graph/ChEMBL items so text-mined edges do not push out the papers' text.
+    """
     evidence = state.get("evidence", {})
     results = state.get("results", {})
-    ordered: list[Evidence] = []
-    seen_pmids: set[str] = set()
+    per_task: list[list[Evidence]] = []
     for task in state.get("plan", []):
         result = results.get(task["id"])
-        for key in result["evidence_keys"] if result else []:
-            e = evidence.get(key)
-            if e is None:
+        items = [evidence[k] for k in (result["evidence_keys"] if result else []) if k in evidence]
+        abstracts = [e for e in items if e["source"] not in GRAPH_SOURCES]
+        graph = [e for e in items if e["source"] in GRAPH_SOURCES]
+        per_task.append(_interleave([abstracts, graph]))
+    ordered: list[Evidence] = []
+    seen_pmids: set[str] = set()
+    for e in _interleave(per_task):
+        if e["pmid"]:
+            if e["pmid"] in seen_pmids:
                 continue
-            if e["pmid"]:
-                if e["pmid"] in seen_pmids:
-                    continue
-                seen_pmids.add(e["pmid"])
-            ordered.append(e)
+            seen_pmids.add(e["pmid"])
+        ordered.append(e)
     computed = [e for e in ordered if e["computed"]][: max(1, limit // 4)]
     papers = [e for e in ordered if not e["computed"]]
     return computed + papers[: limit - len(computed)]
