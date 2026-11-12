@@ -125,6 +125,7 @@ class AgentState(TypedDict, total=False):
     results: Annotated[dict[str, TaskResult], merge_dicts]
     evidence: Annotated[dict[str, Evidence], merge_dicts]
     answer: str
+    draft_answer: str  # synthesizer output before claim verification
     citations: list[Citation]
     verification: dict[str, Any]
     llm_calls: Annotated[list[LLMCallRecord], operator.add]

@@ -15,6 +15,35 @@ from bioagent.common.httpclient import quiet_http_logging
 from bioagent.config import get_settings
 from bioagent.llm.providers import LLMError
 
+LABEL_MARKS = {
+    "supported": "ok",
+    "computed": "ok (computed)",
+    "absence": "absence",
+    "not_supported": "NOT SUPPORTED",
+    "contradicted": "CONTRADICTED",
+}
+
+
+def format_claims(v: dict[str, Any]) -> list[str]:
+    g = v.get("groundedness")
+    counts = v.get("counts", {})
+    lines = [
+        f"Claim verification ({v.get('nli_model')}, policy={v.get('policy')}): "
+        f"groundedness {'n/a' if g is None else f'{g:.0%}'} "
+        f"({counts.get('supported', 0) + counts.get('computed', 0)}/"
+        f"{v.get('checkable_claims', 0)} checkable claims) · "
+        + " · ".join(f"{k} {n}" for k, n in counts.items() if n)
+        + f" · removed {len(v.get('removed_claims', []))} claim(s), flagged "
+        f"{len(v.get('flagged_sentences', []))} sentence(s) · {v.get('seconds')} s",
+        "  #  check          claim  [evidence]",
+    ]
+    for c in v.get("claims", []):
+        cites = ",".join(str(n) for n in c["citations"]) or "-"
+        mark = LABEL_MARKS.get(c["label"], c["label"])
+        claim = textwrap.shorten(c["claim"], 90, placeholder="...")
+        lines.append(f"  {c['n']:>2} {mark:<14} {claim}  [{cites}] ({c['check']})")
+    return lines
+
 
 def format_report(record: dict[str, Any]) -> str:
     lines = [f"Run {record['run_id']}  ({record['status']})", "", f"Q: {record['question']}", ""]
@@ -39,6 +68,8 @@ def format_report(record: dict[str, Any]) -> str:
         lines.append(f"  ! citations with no matching evidence: {v['invalid_citations']}")
     if v.get("uncited_sentences"):
         lines.append(f"  ! {len(v['uncited_sentences'])} sentence(s) without a citation")
+    if v.get("claim_verification") == "on":
+        lines += ["", *format_claims(v)]
     s = record["stats"]
     cost = "n/a" if s["cost_usd"] is None else f"${s['cost_usd']:.4f}"
     if s["cost_usd"] is not None and not s["cost_complete"]:
@@ -65,6 +96,7 @@ def main(argv: list[str] | None = None) -> int:
     ask_p.add_argument("--provider", choices=["gemini", "ollama"])
     ask_p.add_argument("--resume", metavar="RUN_ID", help="resume a failed or interrupted run")
     ask_p.add_argument("--json", action="store_true", help="print the run record as JSON")
+    ask_p.add_argument("--no-verify", action="store_true", help="skip claim-level NLI verification")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING)
@@ -72,13 +104,18 @@ def main(argv: list[str] | None = None) -> int:
     if not args.question and not args.resume:
         parser.error("ask needs a question or --resume RUN_ID")
 
-    from bioagent.agents.runner import ask
+    from bioagent.agents.runner import VerifierUnavailableError, ask
 
     settings = get_settings()
+    if args.no_verify:
+        settings = settings.model_copy(update={"verify_claims": False})
     try:
         record = asyncio.run(
             ask(settings, args.question, provider=args.provider, resume=args.resume)
         )
+    except VerifierUnavailableError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
     except LLMError as exc:
         print(f"error: {exc}", file=sys.stderr)
         print(

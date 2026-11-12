@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import secrets
 import time
@@ -21,6 +22,8 @@ from bioagent.agents.tools import MCPToolHub, ToolProvider
 from bioagent.config import Settings
 from bioagent.llm.providers import RoleModels, make_chat_model, role_specs
 from bioagent.llm.stats import summarize
+from bioagent.verify.nli import TransformersNLI
+from bioagent.verify.verifier import ClaimVerifier, VerifyConfig
 
 RECURSION_LIMIT = 60
 
@@ -55,8 +58,31 @@ class RunMeta:
         return cls(**json.loads(path.read_text()))
 
 
+class VerifierUnavailableError(RuntimeError):
+    pass
+
+
+def build_claim_verifier(settings: Settings) -> ClaimVerifier | None:
+    if not settings.verify_claims:
+        return None
+    if importlib.util.find_spec("transformers") is None:
+        raise VerifierUnavailableError(
+            "claim verification needs the `models` extra (uv sync --extra models); "
+            "or run with --no-verify"
+        )
+    return ClaimVerifier(
+        TransformersNLI(settings.nli_model, device=settings.nli_device),
+        VerifyConfig(
+            entail_threshold=settings.nli_entail_threshold,
+            contradiction_threshold=settings.nli_contradiction_threshold,
+            policy=settings.verify_policy,
+        ),
+    )
+
+
 def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> AgentDeps:
     return AgentDeps(
+        claim_verifier=build_claim_verifier(settings),
         planner=RoleModel(specs.planner, make_chat_model(specs.planner, settings)),
         specialist=RoleModel(specs.specialist, make_chat_model(specs.specialist, settings)),
         synth=RoleModel(specs.synth, make_chat_model(specs.synth, settings)),
@@ -115,6 +141,17 @@ def run_record(state: AgentState, meta: RunMeta) -> dict[str, Any]:
             "attempts": meta.attempts,
         }
     )
+    verification = state.get("verification", {})
+    if verification.get("claim_verification") == "on":
+        stats.update(
+            {
+                "claims": len(verification.get("claims", [])),
+                "groundedness": verification.get("groundedness"),
+                "removed_claims": len(verification.get("removed_claims", [])),
+                "flagged_sentences": len(verification.get("flagged_sentences", [])),
+                "verify_seconds": verification.get("seconds"),
+            }
+        )
     cited_keys = {c["key"] for c in citations}
     return {
         "run_id": meta.run_id,
@@ -128,6 +165,7 @@ def run_record(state: AgentState, meta: RunMeta) -> dict[str, Any]:
         "plan_notes": state.get("plan_notes", []),
         "task_results": state.get("results", {}),
         "answer": state.get("answer", ""),
+        "draft_answer": state.get("draft_answer", state.get("answer", "")),
         "citations": citations,
         "cited_evidence": {k: v for k, v in evidence.items() if k in cited_keys},
         "evidence_keys": sorted(evidence),

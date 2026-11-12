@@ -59,6 +59,14 @@ class Settings(BaseSettings):
     kg_cache_dir: Path = Path("data/kg")
     neo4j_query_timeout_s: float = 10.0
 
+    # Claim verification (see bioagent.verify); the NLI model needs the `models` extra
+    verify_claims: bool = True
+    nli_model: str = "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli"
+    nli_device: str | None = None  # auto: mps, then cuda, then cpu
+    nli_entail_threshold: float = 0.5
+    nli_contradiction_threshold: float = 0.5
+    verify_policy: Literal["remove", "flag"] = "remove"
+
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")
     runs_dir: Path = Path("results/runs")

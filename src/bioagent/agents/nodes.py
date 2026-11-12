@@ -8,7 +8,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -19,6 +19,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langgraph.types import Send
+from pydantic import BaseModel
 
 from bioagent.agents import prompts
 from bioagent.agents.state import (
@@ -37,8 +38,19 @@ from bioagent.agents.tools import (
     render_for_model,
 )
 from bioagent.agents.untrusted import wrap_untrusted
-from bioagent.llm.providers import ModelSpec, ainvoke_with_stats
+from bioagent.llm.providers import ModelSpec, QuotaExhaustedError, ainvoke_with_stats
 from bioagent.llm.stats import RunStatsCollector
+from bioagent.verify.text import (
+    CITE_RE,
+    ESTIMATE_RE,
+    LIST_MARKER_RE,
+    cite_numbers,
+    is_structural,
+    split_sentences,
+)
+
+if TYPE_CHECKING:
+    from bioagent.verify.verifier import ClaimVerifier
 
 MAX_SPECIALIST_STEPS = 6
 MAX_EVIDENCE_FOR_SYNTH = 40
@@ -67,6 +79,8 @@ class AgentDeps:
     sleep: Callable[[float], Awaitable[None]] | None = None
     # Per-specialist model overrides (e.g. a stronger model for literature only).
     specialists: dict[str, RoleModel] = field(default_factory=dict)
+    # Claim-level verification (NLI); None keeps only the citation checks.
+    claim_verifier: ClaimVerifier | None = None
     # Test hook: called at the start of each specialist (e.g. to inject a failure).
     on_specialist_start: Callable[[str], None] | None = field(default=None)
 
@@ -528,20 +542,6 @@ def render_evidence(items: list[Evidence], chars: int = EVIDENCE_CHARS_FOR_SYNTH
     return "\n\n".join(blocks)
 
 
-_CITE_RE = re.compile(r"\[(\d+(?:\s*[,;\u2013-]\s*\d+)*)\]")
-
-
-def _numbers(group: str) -> list[int]:
-    out: list[int] = []
-    for part in re.split(r"\s*[,;]\s*", group):
-        if re.fullmatch(r"\d+\s*[\u2013-]\s*\d+", part):
-            lo, hi = (int(x) for x in re.split(r"\s*[\u2013-]\s*", part))
-            out.extend(range(lo, hi + 1) if hi >= lo and hi - lo < 20 else [lo, hi])
-        elif part.strip().isdigit():
-            out.append(int(part))
-    return out
-
-
 def _citation_url(e: Evidence) -> str | None:
     if e["pmid"]:
         return PUBMED_URL.format(pmid=e["pmid"])
@@ -628,45 +628,18 @@ def make_synthesizer(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[s
 
 
 # --- verifier --------------------------------------------------------------------------
-_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9(\[])")
-_ESTIMATE_RE = re.compile(r"\b(computed|estimate[sd]?|predicted|calculated)\b", re.I)
-_LIST_MARKER_RE = re.compile(r"^(?:[*\-+]|\d+[.)])\s+")
-_BOLD_LINE_RE = re.compile(r"^\*\*[^*]+\*\*:?$")
-
-
-_ABBREV_END_RE = re.compile(r"\b(?:vs|e\.g|i\.e|cf|al|approx|Fig|ca|no)\.$", re.I)
-
-
-def split_sentences(text: str) -> list[str]:
-    """Sentence split that does not break after abbreviations such as "vs." or "e.g."."""
-    out: list[str] = []
-    for piece in _SENTENCE_RE.split(text):
-        if out and _ABBREV_END_RE.search(out[-1]):
-            out[-1] = f"{out[-1]} {piece}"
-        else:
-            out.append(piece)
-    return out
-
-
-def _is_structural(line: str) -> bool:
-    """Headings, bold-only lines and lead-in lines ending in ':' carry no claim to cite."""
-    stripped = _LIST_MARKER_RE.sub("", line.strip()).strip()
-    bare = stripped.strip("*_ ")
-    return (
-        not bare
-        or stripped.startswith("#")
-        or bool(_BOLD_LINE_RE.match(stripped))
-        or bare.endswith(":")
-    )
+# Re-exported for callers that imported these from here.
+_CITE_RE = CITE_RE
+_numbers = cite_numbers
+_is_structural = is_structural
+_LIST_MARKER_RE = LIST_MARKER_RE
+_ESTIMATE_RE = ESTIMATE_RE
 
 
 async def verifier(state: AgentState) -> dict[str, Any]:
-    """Placeholder verifier.
-
-    TODO(weeks 5-6): NLI-based claim verification (does each cited passage entail the
-    sentence?). For now: every [n] must map to real evidence, and sentences without a
-    citation are flagged unless they are marked as computed estimates.
-    """
+    """Citation checks: every [n] must map to real evidence, and sentences without a
+    citation are flagged unless they are marked as computed estimates. Claim-level NLI
+    verification runs on top of this in ``make_verifier``."""
     answer = state.get("answer", "")
     citations = state.get("citations", [])
     numbers = {c["n"] for c in citations}
@@ -687,6 +660,44 @@ async def verifier(state: AgentState) -> dict[str, Any]:
             "all_citations_resolve": not invalid and "[?" not in answer,
             "uncited_sentences": uncited,
             "sentences_checked": len(sentences),
-            "nli": "not implemented (planned for weeks 5-6)",
         }
     }
+
+
+def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, Any]]]:
+    async def verify(state: AgentState) -> dict[str, Any]:
+        base = await verifier(state)
+        answer = state.get("answer", "")
+        citations = state.get("citations", [])
+        if deps.claim_verifier is None or not answer.strip():
+            base["verification"]["claim_verification"] = "off"
+            return base
+        stats = RunStatsCollector()
+
+        async def call(schema: type[BaseModel], messages: list[BaseMessage]) -> BaseModel | None:
+            structured = deps.synth.model.with_structured_output(schema, include_raw=True)
+            try:
+                out = await _invoke(deps, deps.synth, structured, messages, "verifier", stats)
+            except QuotaExhaustedError:
+                raise
+            except Exception:  # fall back to sentence-level claims
+                return None
+            parsed = out.get("parsed") if isinstance(out, dict) else out
+            return parsed if isinstance(parsed, schema) else None
+
+        result = await deps.claim_verifier.verify(
+            answer, citations, state.get("evidence", {}), call=call
+        )
+        return {
+            "answer": result["answer"],
+            "citations": result["citations"],
+            "draft_answer": answer,
+            "verification": {
+                **base["verification"],
+                "claim_verification": "on",
+                **result["report"],
+            },
+            **stats.update(),
+        }
+
+    return verify

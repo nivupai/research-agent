@@ -333,7 +333,6 @@ async def test_verifier_flags_uncited_sentences() -> None:
         "This sentence makes a claim but has no citation at all here."
     ]
     assert out["sentences_checked"] == 4
-    assert "not implemented" in out["nli"]
     assert split_sentences("A is 1 vs. 2 for B. Next one, e.g. 3 cases.") == [
         "A is 1 vs. 2 for B.",
         "Next one, e.g. 3 cases.",

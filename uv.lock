@@ -414,6 +414,7 @@ dependencies = [
 [package.optional-dependencies]
 models = [
     { name = "sentence-transformers" },
+    { name = "transformers" },
 ]
 
 [package.dev-dependencies]
@@ -448,6 +449,7 @@ requires-dist = [
     { name = "rank-bm25", specifier = ">=0.2.2" },
     { name = "rdkit", specifier = ">=2026.9.2" },
     { name = "sentence-transformers", marker = "extra == 'models'", specifier = ">=6.3.0" },
+    { name = "transformers", marker = "extra == 'models'", specifier = ">=5.22" },
 ]
 provides-extras = ["models"]
 
