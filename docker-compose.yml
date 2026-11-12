@@ -1,0 +1,23 @@
+# Local services for the BioResearch Agent. Start with `make graph-up`.
+services:
+  neo4j:
+    image: neo4j:5.26.12-community
+    container_name: bioagent-neo4j
+    ports:
+      - "127.0.0.1:7474:7474"   # browser (localhost only)
+      - "127.0.0.1:7687:7687"   # bolt
+    environment:
+      NEO4J_AUTH: "neo4j/${NEO4J_PASSWORD:?set NEO4J_PASSWORD in .env}"
+      NEO4J_server_memory_heap_initial__size: 512m
+      NEO4J_server_memory_heap_max__size: 1G
+      NEO4J_server_memory_pagecache_size: 512m
+      NEO4J_db_transaction_timeout: 60s
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped

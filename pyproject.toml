@@ -20,6 +20,7 @@ dependencies = [
     "langchain-google-genai>=4.5.0",
     "langchain-ollama>=1.1.0",
     "google-genai>=3.2.0",
+    "neo4j>=6.4.1",
 ]
 
 [project.scripts]
@@ -82,5 +83,6 @@ markers = [
     "docker: needs a local Docker daemon and the sandbox image (make sandbox-image)",
     "models: loads real sentence-transformers models (needs the `models` extra)",
     "llm: calls a real LLM (Gemini API or local Ollama)",
+    "neo4j: needs the local Neo4j from docker-compose.yml (make graph-up)",
 ]
-addopts = "-m 'not live and not docker and not models and not llm'"
+addopts = "-m 'not live and not docker and not models and not llm and not neo4j'"

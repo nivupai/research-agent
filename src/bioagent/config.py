@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     llm_timeout_s: float = 120.0
     llm_max_retries: int = 5
 
+    # Knowledge graph (see bioagent.kg); Neo4j runs from docker-compose.yml
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: SecretStr | None = None
+    kg_cache_dir: Path = Path("data/kg")
+    neo4j_query_timeout_s: float = 10.0
+
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")
     runs_dir: Path = Path("results/runs")
