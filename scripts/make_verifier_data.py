@@ -8,6 +8,8 @@ Steps (default: all):
   nli      DeBERTa-v3-large NLI prediction for every pair (second baseline)
   export   data/finetune/{train,val,test}.jsonl with labels, and the human spot-label sheet
            eval/labels/verifier_test_human.jsonl (blank human_label)
+  bundle   data/finetune/verifier_bundle.zip for notebooks/train_verifier_lora.ipynb
+           (teacher-labelled train/val/test JSONL + README with the notebook settings)
 
 Usage: uv run python scripts/make_verifier_data.py [build teacher nli export] [--teacher-model M]
 """
@@ -180,9 +182,63 @@ def human_sheet(test: list[Pair]) -> list[dict[str, object]]:
     return rows
 
 
+BUNDLE = OUT / "verifier_bundle.zip"
+BUNDLE_README = """Verifier training bundle for notebooks/train_verifier_lora.ipynb
+
+Files: train.jsonl, val.jsonl, test.jsonl (one claim/passage pair per line; the label to learn
+is labels.teacher = SUPPORTED | CONTRADICTED | NOT_ENOUGH_INFO, from {teacher}).
+Counts (teacher-labelled): {counts}
+
+Notebook settings (defaults in the notebook; keep them for comparable results):
+  base model      Qwen/Qwen3-1.7B (Apache-2.0), 3-way sequence-classification head
+  quantization    4-bit nf4 (QLoRA), compute dtype float16
+  LoRA            r=16, alpha=32, dropout=0.05, q/k/v/o/gate/up/down projections, head trained
+  steps           600, batch 8, gradient accumulation 2 (effective batch 16)
+  learning rate   2e-4, 20 warm-up steps, linear decay; class-weighted cross-entropy
+  max length      512 tokens
+  runtime         Colab: Runtime > Change runtime type > T4 GPU. Kaggle: Accelerator GPU T4.
+
+How to use: upload this zip to the notebook (file upload, Google Drive at
+MyDrive/verifier_bundle.zip, or a Kaggle dataset), Run all, download verifier-lora.zip, unzip
+it into models/verifier-lora/ in the repo, then run:  uv run python scripts/eval_verifier.py
+test.jsonl is included for that local evaluation; the notebook does not train on it.
+"""
+
+
+def bundle() -> Path:
+    """Zip the teacher-labelled splits with a README of the notebook settings."""
+    import zipfile
+
+    counts: dict[str, dict[str, int]] = {}
+    texts: dict[str, str] = {}
+    for split in ("train", "val", "test"):
+        rows = [json.loads(line) for line in (OUT / f"{split}.jsonl").read_text().splitlines()]
+        labelled = [r for r in rows if (r.get("labels") or {}).get("teacher")]
+        counts[split] = dict(Counter(r["labels"]["teacher"] for r in labelled))
+        texts[f"{split}.jsonl"] = "".join(
+            json.dumps(r, ensure_ascii=False) + "\n" for r in labelled
+        )
+    if not any(counts.values()):
+        raise SystemExit("no teacher labels yet: run the teacher and export steps first")
+    teacher = next(
+        (
+            json.loads(line)["labels"]["teacher_model"]
+            for line in (OUT / "train.jsonl").read_text().splitlines()
+        ),
+        "the Gemini teacher",
+    )
+    with zipfile.ZipFile(BUNDLE, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, text in texts.items():
+            zf.writestr(name, text)
+        zf.writestr("README.txt", BUNDLE_README.format(teacher=teacher, counts=counts))
+    size = BUNDLE.stat().st_size
+    print(f"bundle: {BUNDLE} ({size / 1e6:.1f} MB) {counts}")
+    return BUNDLE
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("steps", nargs="*", default=["build", "teacher", "nli", "export"])
+    parser.add_argument("steps", nargs="*", default=["build", "teacher", "nli", "export", "bundle"])
     parser.add_argument("--teacher-model", default="gemini:gemini-3.5-flash-lite")
     args = parser.parse_args()
     for step in args.steps:
@@ -194,5 +250,7 @@ if __name__ == "__main__":
             nli()
         elif step == "export":
             export(args.teacher_model)
+        elif step == "bundle":
+            bundle()
         else:
             raise SystemExit(f"unknown step {step}")

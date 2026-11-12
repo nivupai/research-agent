@@ -37,10 +37,23 @@ def reference(p: Pair, source: str) -> str | None:
     return (p.labels.get("nli") or {}).get("label")
 
 
-def small_predictions(pairs: list[Pair]) -> dict[str, Any]:
+ADAPTERS = (ROOT / "models" / "verifier-lora", ROOT / "models" / "verifier-lora-local")
+
+
+def pick_adapter(explicit: Path | None) -> Path:
+    """The notebook adapter (models/verifier-lora) if present, else the local fallback."""
+    if explicit is not None:
+        return explicit
+    for path in ADAPTERS:
+        if (path / "training.json").exists():
+            return path
+    raise SystemExit("no trained adapter: run the notebook or scripts/train_verifier_lora.py")
+
+
+def small_predictions(pairs: list[Pair], adapter: Path) -> dict[str, Any]:
     from bioagent.finetune.model import SmallVerifier
 
-    model = SmallVerifier(ROOT / "models" / "verifier-lora")
+    model = SmallVerifier(adapter)
     model.predict_proba([(pairs[0].passage, pairs[0].claim)])  # load + warm up
     probs, secs = model.timed_predict([(p.passage, p.claim) for p in pairs])
     preds = [LABEL_ORDER[max(range(3), key=lambda i: pr[i])] for pr in probs]
@@ -171,14 +184,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--skip-llm", action="store_true")
     parser.add_argument("--reference", choices=["teacher", "nli"], default="teacher")
+    parser.add_argument("--adapter", type=Path, help="default: models/verifier-lora, else -local")
     args = parser.parse_args()
+    adapter = pick_adapter(args.adapter)
+    training = json.loads((adapter / "training.json").read_text())
+    print(f"adapter {adapter} ({training.get('steps')} steps on {training.get('device')})")
     test = [p for p in read_pairs(DATA / "test.jsonl") if reference(p, args.reference)]
     val = [p for p in read_pairs(DATA / "val.jsonl") if reference(p, args.reference)]
     gold = [reference(p, args.reference) or "" for p in test]
-    small = small_predictions(test)
+    small = small_predictions(test, adapter)
     nli = [(p.labels.get("nli") or {}) for p in test]
     systems = [
-        system_row("fine-tuned small (LoRA)", gold, small["pred"], small["seconds"], 0.0),
+        system_row(
+            f"fine-tuned small (LoRA, {training.get('steps')} steps)",
+            gold,
+            small["pred"],
+            small["seconds"],
+            0.0,
+        ),
         system_row(
             "DeBERTa-v3-large NLI",
             gold,
@@ -202,11 +225,13 @@ def main() -> None:
                 note,
             )
         )
-    small_val = small_predictions(val)
+    small_val = small_predictions(val, adapter)
     llm_val = None if args.skip_llm else llm_predictions(val)
     curve = router_curve(val, small_val, llm_val, args.reference)
     report: dict[str, Any] = {
         "reference": args.reference,
+        "adapter": str(adapter.relative_to(ROOT)),
+        "training": {k: v for k, v in training.items() if k not in ("history", "val")},
         "systems": systems,
         "router": curve,
         "router_choice": pick_threshold(curve),

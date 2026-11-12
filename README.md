@@ -282,9 +282,17 @@ label is added and on each later push). It is skipped with a notice if the repos
 
 ```bash
 uv run python scripts/make_verifier_data.py          # pairs, teacher labels, NLI baseline, splits
-uv run python scripts/train_verifier_lora.py --steps 200   # local MPS/CUDA (or the notebook)
-uv run python scripts/eval_verifier.py               # test-split comparison + router curve
+uv run python scripts/make_verifier_data.py bundle   # data/finetune/verifier_bundle.zip
+# full training: notebooks/train_verifier_lora.ipynb on a free Colab/Kaggle T4 (upload the
+# bundle, Run all, download verifier-lora.zip), then: unzip verifier-lora.zip -d models/
+uv run python scripts/train_verifier_lora.py --steps 150 --grad-checkpointing \
+    --batch 2 --accum 4 --max-length 384 --out models/verifier-lora-local   # local fallback
+uv run python scripts/eval_verifier.py               # models/verifier-lora, else -local
 ```
+
+On a 17 GB Apple-silicon Mac the local script only fits with gradient checkpointing (batch
+2 x 384 tokens: ~9.5 s per 4 examples, so ~6 h for the notebook's 600 x 16 examples); the T4
+notebook (4-bit) is the practical path for the full model.
 
 * **Pairs** (~3.2k, deduped): claims from saved runs/eval answers with their cited passages,
   results sentences paired with their own abstract, same-topic passages from other papers
