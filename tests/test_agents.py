@@ -16,6 +16,7 @@ from bioagent.agents.nodes import (
     RoleModel,
     map_citations,
     ready_tasks,
+    split_sentences,
     verifier,
 )
 from bioagent.agents.runner import ask, execute
@@ -241,9 +242,14 @@ def test_map_citations_renumbers_and_flags_invalid() -> None:
 async def test_verifier_flags_uncited_sentences() -> None:
     state: Any = {
         "answer": (
+            "### Heading line that is long enough to be checked here\n"
+            "3. **Epigenetic Control via MGMT Promoter Methylation:**\n"
+            "**A bold-only line that should never be treated as a claim**\n"
+            "The following points summarise the evidence collected so far:\n"
             "Metformin activates AMPK in many tissues according to studies [1]. "
             "This sentence makes a claim but has no citation at all here. "
-            "The computed TPSA is 91.5 which suggests limited brain entry overall."
+            "The computed TPSA is 91.5 which suggests limited brain entry overall. "
+            "Metformin has 0 rotatable bonds vs. 1 for temozolomide in this set [1]."
         ),
         "citations": [{"n": 1}],
         "verification": {"invalid_citations": []},
@@ -253,7 +259,12 @@ async def test_verifier_flags_uncited_sentences() -> None:
     assert out["uncited_sentences"] == [
         "This sentence makes a claim but has no citation at all here."
     ]
+    assert out["sentences_checked"] == 4
     assert "not implemented" in out["nli"]
+    assert split_sentences("A is 1 vs. 2 for B. Next one, e.g. 3 cases.") == [
+        "A is 1 vs. 2 for B.",
+        "Next one, e.g. 3 cases.",
+    ]
 
 
 async def test_end_to_end_citations_map_to_evidence(tmp_path: Path) -> None:

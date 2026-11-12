@@ -400,14 +400,29 @@ _LIST_MARKER_RE = re.compile(r"^(?:[*\-+]|\d+[.)])\s+")
 _BOLD_LINE_RE = re.compile(r"^\*\*[^*]+\*\*:?$")
 
 
+_ABBREV_END_RE = re.compile(r"\b(?:vs|e\.g|i\.e|cf|al|approx|Fig|ca|no)\.$", re.I)
+
+
+def split_sentences(text: str) -> list[str]:
+    """Sentence split that does not break after abbreviations such as "vs." or "e.g."."""
+    out: list[str] = []
+    for piece in _SENTENCE_RE.split(text):
+        if out and _ABBREV_END_RE.search(out[-1]):
+            out[-1] = f"{out[-1]} {piece}"
+        else:
+            out.append(piece)
+    return out
+
+
 def _is_structural(line: str) -> bool:
     """Headings, bold-only lines and lead-in lines ending in ':' carry no claim to cite."""
-    stripped = line.strip()
+    stripped = _LIST_MARKER_RE.sub("", line.strip()).strip()
+    bare = stripped.strip("*_ ")
     return (
-        not stripped
+        not bare
         or stripped.startswith("#")
         or bool(_BOLD_LINE_RE.match(stripped))
-        or stripped.endswith(":")
+        or bare.endswith(":")
     )
 
 
@@ -425,7 +440,7 @@ async def verifier(state: AgentState) -> dict[str, Any]:
         s.strip()
         for line in answer.splitlines()
         if not _is_structural(line)
-        for s in _SENTENCE_RE.split(_LIST_MARKER_RE.sub("", line.strip()))
+        for s in split_sentences(_LIST_MARKER_RE.sub("", line.strip()))
         if len(s.strip()) > 40
     ]
     uncited = [s for s in sentences if not _CITE_RE.search(s) and not _ESTIMATE_RE.search(s)]
