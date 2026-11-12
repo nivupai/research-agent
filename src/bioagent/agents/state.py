@@ -28,6 +28,14 @@ class Task(BaseModel):
     depends_on: list[str] = Field(
         default_factory=list, description="ids of tasks whose results this task needs"
     )
+    drug_target: str | None = Field(
+        default=None,
+        description="literature tasks that ask which drugs act on a gene, complex or "
+        "pathway: that target's name (e.g. AMPK, MGMT); otherwise null",
+    )
+    approved_only: bool = Field(
+        default=False, description="with drug_target: only approved drugs are wanted"
+    )
 
 
 class Plan(BaseModel):
@@ -113,9 +121,11 @@ class AgentState(TypedDict, total=False):
     question: str
     plan: list[dict[str, Any]]
     plan_rationale: str
+    plan_notes: list[str]
     results: Annotated[dict[str, TaskResult], merge_dicts]
     evidence: Annotated[dict[str, Evidence], merge_dicts]
     answer: str
+    draft_answer: str  # synthesizer output before claim verification
     citations: list[Citation]
     verification: dict[str, Any]
     llm_calls: Annotated[list[LLMCallRecord], operator.add]

@@ -11,9 +11,9 @@ Break the user's question into a small DAG of tasks (1-{MAX_TASKS}) for speciali
   plus live PubMed and Europe PMC search) and query the biomedical knowledge graph built
   from that corpus (genes, drugs, diseases; PubTator3 relations with evidence PMIDs and
   ChEMBL mechanisms of action). Say in the task description which approach to use:
-  * "Which drugs act on target T": drugs_targeting(T) from the graph PLUS a corpus search
-    for drug classes reported to act on T (the graph misses some classes, e.g. statins,
-    thiazolidinediones, salicylates), so the list stays broad.
+  * "Which drugs act on target T": set drug_target=T on that literature task (and
+    approved_only=true if approved drugs are asked for). The graph lookup and the corpus
+    searches for drug classes then run automatically, so the drug list stays broad.
   * "Is there evidence drug D could treat / be repurposed for disease Y": paths(D -> Y)
     in the graph, then the direct evidence papers for the D-Y edge (evidence tool) and a
     corpus search for primary studies (cell lines, animal models, trials) of D in Y,
@@ -25,6 +25,8 @@ Break the user's question into a small DAG of tasks (1-{MAX_TASKS}) for speciali
 - chemistry: compute molecular properties, drug-likeness, BBB estimates, similarity or
   substructure matches with RDKit; can resolve drug names via PubChem.
 - analysis: run Python (numpy/pandas/scipy) on numbers produced by other tasks.
+Only plan chemistry or analysis tasks when the question asks for properties, BBB
+permeability, drug-likeness or another computation; otherwise use literature tasks only.
 Use depends_on only when a task truly needs another task's output; independent tasks run in
 parallel. Prefer few, focused tasks: simple questions need one or two. Do not create a
 "synthesis" or "write answer" task; that happens automatically after all tasks finish.
@@ -51,10 +53,10 @@ pubtator = text-mined), paths (links of up to 3 hops between two entities) and e
 (papers behind one edge id). drugs_targeting, neighbors and paths accept plain names and
 resolve them themselves, so call them directly; find_entity alone returns no evidence.
 Recipes (call independent tools in the same step):
-- Drugs acting on a target T: call drugs_targeting(T, approved_only=true when approved
-  drugs are asked for) AND search_corpus for drug classes acting on T (e.g. "approved drugs
-  that activate T: biguanides, statins, thiazolidinediones, salicylates"). Report both the
-  graph hits and classes found only in the literature; do not drop literature-only drugs.
+- Drugs acting on a target T: if discovery results are already given in the task, build on
+  them. Otherwise call drugs_targeting(T, approved_only=true when approved drugs are asked
+  for) AND search_corpus for drug classes acting on T. Report both the graph hits and
+  classes found only in the literature; do not drop literature-only drugs.
 - Repurposing / "could drug D treat disease Y": for each candidate D (at most 3), call
   paths(source=D, target=Y, max_hops=2). If a direct D-Y edge exists (1 hop, e.g. TREATS),
   call evidence(edge_id) on it to get its papers. Also call search_corpus for primary

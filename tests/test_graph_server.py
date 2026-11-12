@@ -28,7 +28,14 @@ def fake_store() -> Iterator[FakeReader]:
 
 async def test_tools_registered() -> None:
     names = {t.name for t in await server.mcp.list_tools()}
-    assert names == {"find_entity", "neighbors", "drugs_targeting", "paths", "evidence"}
+    assert names == {
+        "find_entity",
+        "neighbors",
+        "drugs_targeting",
+        "paths",
+        "evidence",
+        "drugs_mentioned",
+    }
 
 
 async def test_find_entity_marks_results_untrusted() -> None:

@@ -226,3 +226,10 @@ def evidence_query(edge_id: str) -> str:
 PAPERS_BY_PMID = (
     "MATCH (p:Paper) WHERE p.pmid IN $pmids RETURN p.pmid AS pmid, p.title AS title, p.year AS year"
 )
+
+DRUGS_MENTIONED = (
+    "MATCH (p:Paper)-[:MENTIONS]->(d:Drug) WHERE p.pmid IN $pmids "
+    "AND (NOT $approved_only OR coalesce(d.max_phase, 0) >= 4) "
+    "WITH d, collect(DISTINCT p.pmid) AS pmids "
+    "RETURN d, pmids, size(pmids) AS n ORDER BY n DESC, d.papers DESC LIMIT $limit"
+)

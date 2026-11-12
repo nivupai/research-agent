@@ -168,8 +168,31 @@ A LangGraph graph (`bioagent.agents`):
    edges are mined from the same abstracts it cites: graph claims become evidence on their
    PMIDs (ChEMBL mechanisms are cited as ChEMBL records).
 4. **synthesizer** writes the answer with `[n]` citations mapped to evidence passages
-   (PMIDs) or computed results; **verifier** checks that every `[n]` resolves and flags
-   uncited sentences (NLI verification comes later).
+   (PMIDs) or computed results; **verifier** checks that every `[n]` resolves, then
+   verifies each claim (below).
+
+### Claim verification (`bioagent.verify`)
+
+The synthesizer's sentences are numbered and an LLM (structured output, synthesizer model)
+splits them into atomic claims that keep their `[n]` citations. Each claim is labelled:
+
+| label | check |
+|---|---|
+| `supported` | NLI entailment >= `NLI_ENTAIL_THRESHOLD` (0.5) against a sentence window of a cited passage |
+| `contradicted` | NLI contradiction >= `NLI_CONTRADICTION_THRESHOLD` (0.5) and not supported |
+| `not_supported` | neither, no resolvable citation, or computed numbers that do not match |
+| `computed` | cites an RDKit/sandbox result and every number matches the tool output |
+| `absence` | an explicit "nothing was found" claim an LLM judged consistent with all retrieved evidence (weaker; not counted) |
+
+NLI runs locally with `NLI_MODEL` (default
+`MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, ~1.7 GB, needs the `models`
+extra; MPS/CUDA/CPU via `NLI_DEVICE`). Passages are split into 3-sentence windows and the
+best window counts. With `VERIFY_POLICY=remove` (default) sentences whose claims all fail
+are removed and partly failing ones get `[unverified]`; `flag` only marks them. Citations
+are renumbered afterwards and the synthesizer's text is kept as `draft_answer`.
+Groundedness = (supported + computed) / (supported + computed + contradicted +
+not_supported). The CLI prints the claim table; run stats gain `groundedness`, `claims`,
+`removed_claims` and `verify_seconds`. `bioagent ask ... --no-verify` turns it off.
 
 All retrieved text is wrapped in `<<<UNTRUSTED_DATA>>>` blocks and the models are told never
 to follow instructions inside them. Runs are checkpointed in `data/checkpoints.sqlite`
@@ -179,7 +202,13 @@ list-price cost per call.
 Models: `LLM_PROVIDER` (gemini|ollama), `GEMINI_MODEL` (planner/synthesizer, default
 `gemini-3.5-flash`), `GEMINI_FAST_MODEL` (specialists, default `gemini-3.5-flash-lite`),
 `OLLAMA_MODEL`, or per-role `PLANNER_MODEL` / `SPECIALIST_MODEL` / `SYNTH_MODEL` as
-`provider:model`. Free-tier 429s are retried with backoff; an exhausted daily quota stops the
+`provider:model`; `LITERATURE_MODEL` / `CHEMISTRY_MODEL` / `ANALYSIS_MODEL` override the
+specialist model for one kind (ignored with `--provider`).
+
+The planner only adds chemistry/analysis tasks when the question asks for properties, BBB,
+drug-likeness or another computation. A literature task with `drug_target` (e.g. "which
+drugs act on AMPK") always runs `drugs_targeting`, three corpus searches and a PubMed
+search, and passes on the union of graph hits and drugs annotated in the corpus hits. Free-tier 429s are retried with backoff; an exhausted daily quota stops the
 run with a clear message and the run can be resumed later.
 
 ## Development

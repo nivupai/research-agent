@@ -18,8 +18,8 @@ from bioagent.agents.nodes import (
     make_planner,
     make_specialist,
     make_synthesizer,
+    make_verifier,
     route_ready,
-    verifier,
 )
 from bioagent.agents.state import TASK_KINDS, AgentState
 
@@ -34,7 +34,7 @@ def build_graph(deps: AgentDeps) -> Any:
         graph.add_node(kind, make_specialist(kind, deps))
         graph.add_edge(kind, "dispatch")
     graph.add_node("synthesizer", make_synthesizer(deps))
-    graph.add_node("verifier", verifier)
+    graph.add_node("verifier", make_verifier(deps))
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "dispatch")
     graph.add_conditional_edges("dispatch", route_ready, [*TASK_KINDS, "synthesizer"])

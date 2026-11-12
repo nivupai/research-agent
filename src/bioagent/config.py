@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     planner_model: str | None = None
     specialist_model: str | None = None
     synth_model: str | None = None
+    # Per-specialist overrides of SPECIALIST_MODEL, e.g. LITERATURE_MODEL=gemini:gemini-3.5-flash
+    literature_model: str | None = None
+    chemistry_model: str | None = None
+    analysis_model: str | None = None
     llm_timeout_s: float = 120.0
     llm_max_retries: int = 5
 
@@ -54,6 +58,14 @@ class Settings(BaseSettings):
     neo4j_password: SecretStr | None = None
     kg_cache_dir: Path = Path("data/kg")
     neo4j_query_timeout_s: float = 10.0
+
+    # Claim verification (see bioagent.verify); the NLI model needs the `models` extra
+    verify_claims: bool = True
+    nli_model: str = "MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli"
+    nli_device: str | None = None  # auto: mps, then cuda, then cpu
+    nli_entail_threshold: float = 0.5
+    nli_contradiction_threshold: float = 0.5
+    verify_policy: Literal["remove", "flag"] = "remove"
 
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")

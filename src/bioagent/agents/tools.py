@@ -24,7 +24,14 @@ from langchain_core.tools import BaseTool, StructuredTool
 
 from bioagent.agents.state import Evidence
 
-GRAPH_TOOLS: tuple[str, ...] = ("find_entity", "neighbors", "drugs_targeting", "paths", "evidence")
+GRAPH_TOOLS: tuple[str, ...] = (
+    "find_entity",
+    "neighbors",
+    "drugs_targeting",
+    "paths",
+    "evidence",
+    "drugs_mentioned",
+)
 
 TOOL_SCOPES: dict[str, tuple[str, ...]] = {
     "literature": (
@@ -207,8 +214,10 @@ def extract_evidence(
             )
     elif tool in GRAPH_TOOLS:
         out.extend(graph_evidence(tool, result, task_id))
+    elif tool == "resolve_name":
+        pass  # a PubChem name lookup identifies a compound; it is not evidence for a claim
     elif tool in TOOL_SCOPES["chemistry"] or tool == "run_python":
-        source = {"resolve_name": "pubchem", "run_python": "sandbox"}.get(tool, "rdkit")
+        source = "sandbox" if tool == "run_python" else "rdkit"
         out.append(
             Evidence(
                 key=f"computed:{task_id}:{start + 1}",

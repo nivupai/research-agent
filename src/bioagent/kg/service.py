@@ -419,6 +419,29 @@ class GraphService:
         }
         return _wrap(payload, papers)
 
+    async def drugs_mentioned(
+        self, pmids: Sequence[str], approved_only: bool = False, limit: int = 30
+    ) -> dict[str, Any]:
+        """Drugs PubTator annotated in the given papers, most frequently mentioned first."""
+        ids = [str(p).strip() for p in pmids if str(p).strip().isdigit()][:MAX_TITLE_PMIDS]
+        if not ids:
+            raise q.QueryValidationError("give at least one numeric PMID")
+        rows = await self.store.read(
+            q.DRUGS_MENTIONED,
+            {"pmids": ids, "approved_only": approved_only, "limit": q.clamp_limit(limit, 30)},
+            max_records=q.MAX_LIMIT,
+        )
+        drugs = [
+            {
+                **entity_view(r["d"], ["Drug"]),
+                "source": "pubtator",
+                "pmids": r["pmids"][:EDGE_PMIDS],
+                "papers_in_query": r["n"],
+            }
+            for r in rows
+        ]
+        return _wrap({"pmids_queried": len(ids), "approved_only": approved_only, "drugs": drugs})
+
     async def evidence(self, edge_id: str, limit: int = 10) -> dict[str, Any]:
         limit = q.clamp_limit(limit, 10)
         rows = await self.store.read(q.evidence_query(edge_id), {"edge_id": edge_id})

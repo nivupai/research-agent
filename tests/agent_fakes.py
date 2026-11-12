@@ -150,6 +150,12 @@ def fake_tools(
                     "smiles": {"type": "string"},
                     "code": {"type": "string"},
                     "smiles_or_name": {"type": "string"},
+                    "target": {"type": "string"},
+                    "approved_only": {"type": "boolean"},
+                    "k": {"type": "integer"},
+                    "mode": {"type": "string"},
+                    "limit": {"type": "integer"},
+                    "pmids": {"type": "array", "items": {"type": "string"}},
                 },
             },
         )
@@ -176,7 +182,18 @@ def fake_tools(
         make("drugs_targeting", lambda a: GRAPH_DRUGS_RESULT),
         make("paths", lambda a: GRAPH_PATHS_RESULT),
         make("evidence", lambda a: GRAPH_EVIDENCE_RESULT),
+        make("drugs_mentioned", lambda a: GRAPH_MENTIONED_RESULT),
     ]
+
+
+GRAPH_MENTIONED_RESULT: dict[str, Any] = {
+    "untrusted": True,
+    "drugs": [
+        {"id": "MESH:D008687", "name": "Metformin", "max_phase": 4.0, "papers_in_query": 3},
+        {"id": "MESH:D019821", "name": "Simvastatin", "max_phase": 4.0, "papers_in_query": 2},
+        {"id": "MESH:D001241", "name": "Aspirin", "max_phase": 4.0, "papers_in_query": 1},
+    ],
+}
 
 
 GRAPH_PATHS_RESULT: dict[str, Any] = {
