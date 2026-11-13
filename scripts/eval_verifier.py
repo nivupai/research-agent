@@ -60,22 +60,50 @@ def small_predictions(pairs: list[Pair], adapter: Path) -> dict[str, Any]:
     return {"pred": preds, "probs": probs, "seconds": secs}
 
 
+LLM_STATS = OUT / "llm_stats.json"
+
+
 def llm_predictions(pairs: list[Pair]) -> dict[str, Any]:
+    """Gemini verifier labels (cached). Per-pair latency and cost are measured whenever new
+    calls are made and saved to llm_stats.json, so fully cached runs can still report them."""
     scorer = make_llm_scorer(get_settings())
     t0 = time.monotonic()
     labels = scorer.labels([(p.passage, p.claim) for p in pairs])
     wall = time.monotonic() - t0
     calls = scorer.calls[-1] if scorer.calls else {}
-    n_called = max(1, calls.get("requested", 0))
-    per_pair = calls.get("latency_s", 0.0) / n_called if calls.get("calls") else None
+    model = str(scorer.spec)
+    per_pair: float | None = None
+    cost: float | None = None
+    source = "measured now"
+    if calls.get("calls"):
+        n_called = max(1, calls.get("requested", 0))
+        per_pair = calls.get("latency_s", 0.0) / n_called
+        cost = calls.get("cost_usd", 0.0) / n_called
+        OUT.mkdir(parents=True, exist_ok=True)
+        LLM_STATS.write_text(
+            json.dumps(
+                {
+                    "model": model,
+                    "seconds_per_pair": per_pair,
+                    "cost_per_pair": cost,
+                    "measured_at": time.strftime("%Y-%m-%d"),
+                }
+            )
+        )
+    elif LLM_STATS.exists():
+        saved = json.loads(LLM_STATS.read_text())
+        if saved.get("model") == model:
+            per_pair, cost = saved["seconds_per_pair"], saved["cost_per_pair"]
+            source = f"measured {saved.get('measured_at')} (labels cached)"
     return {
         "pred": labels,
         "stopped": calls.get("stopped"),
         "new_calls": calls.get("calls", 0),
         "seconds_per_pair": per_pair,
-        "cost_per_pair": (calls.get("cost_usd", 0.0) / n_called) if calls.get("calls") else None,
+        "cost_per_pair": cost,
+        "stats_source": source,
         "wall_seconds": wall,
-        "model": str(scorer.spec),
+        "model": model,
     }
 
 
@@ -214,7 +242,8 @@ def main() -> None:
     if llm_test is not None:
         per_pair = llm_test["seconds_per_pair"]
         cost = llm_test["cost_per_pair"]
-        note = "(pending: quota)" if llm_test["stopped"] else ""
+        source = llm_test["stats_source"]
+        note = "(pending: quota)" if llm_test["stopped"] else f"(latency/cost {source})"
         systems.append(
             system_row(
                 f"Gemini {llm_test['model']} (large model)",

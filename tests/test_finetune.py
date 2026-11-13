@@ -210,3 +210,17 @@ def test_trained_adapter_loads_and_scores() -> None:
         [("Metformin activates AMPK.", "Metformin activates AMPK.")]
     )
     assert len(probs) == 1 and abs(sum(probs[0]) - 1) < 1e-3
+
+
+def test_llm_backend_never_invents_labels(monkeypatch: pytest.MonkeyPatch) -> None:
+    from bioagent.eval.cache import JSONCache
+    from bioagent.finetune import labels as labels_mod
+    from bioagent.verify.backends import LLMPairScorer, LLMVerifierUnavailableError
+
+    async def quota_out(*args: object, **kwargs: object) -> dict[str, object]:
+        return {"stopped": "quota exhausted", "calls": 0}
+
+    monkeypatch.setattr(labels_mod, "label_with_teacher", quota_out)
+    scorer = LLMPairScorer(model=None, spec=ModelSpec("gemini", "x"), cache=JSONCache(":memory:"))
+    with pytest.raises(LLMVerifierUnavailableError, match="quota exhausted"):
+        scorer.labels([("passage", "claim")])

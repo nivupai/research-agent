@@ -25,6 +25,10 @@ from bioagent.verify.nli import NLIScorer, NLIScores
 LLM_CONFIDENCE = 0.9
 
 
+class LLMVerifierUnavailableError(RuntimeError):
+    """The LLM backend could not label every pair (quota exhausted or unparsable output)."""
+
+
 class ProbaModel(Protocol):
     def predict_proba(self, pairs: Sequence[tuple[str, str]]) -> list[list[float]]: ...
 
@@ -74,7 +78,13 @@ class LLMPairScorer:
         out = []
         for item in items:
             cached = self.cache.get(teacher_key(item, self.spec, LLM_VERIFIER_VERSION))
-            out.append(cached["label"] if cached else "NOT_ENOUGH_INFO")
+            if cached is None:
+                # never substitute a label silently (e.g. when the quota ran out)
+                raise LLMVerifierUnavailableError(
+                    f"no LLM verifier label for {len(items)} pair(s): "
+                    f"{result.get('stopped') or 'the LLM output could not be parsed'}"
+                )
+            out.append(cached["label"])
         return out
 
     def score(self, pairs: Sequence[tuple[str, str]]) -> list[NLIScores]:
