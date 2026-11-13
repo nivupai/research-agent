@@ -21,6 +21,13 @@ dependencies = [
     "langchain-ollama>=1.1.0",
     "google-genai>=3.2.0",
     "neo4j>=6.4.1",
+    "fastapi>=0.115",
+    "uvicorn>=0.32",
+    "redis>=5.2",
+    "opentelemetry-api>=1.28",
+    "opentelemetry-sdk>=1.28",
+    "opentelemetry-exporter-otlp-proto-http>=1.28",
+    "prometheus-client>=0.21",
 ]
 
 [project.scripts]
@@ -49,6 +56,7 @@ dev = [
     "types-docker>=7.2.0.20261102",
     "types-requests>=2.33.0.20261030",
     "types-pyyaml>=6.0.12.20261111",
+    "fakeredis>=2.26",
 ]
 
 [build-system]

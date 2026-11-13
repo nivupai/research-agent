@@ -6,7 +6,7 @@ import importlib.util
 import json
 import secrets
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -99,13 +99,52 @@ def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> Ag
     )
 
 
+EventSink = Callable[[dict[str, Any]], Awaitable[None]]
+
+
+def progress_event(node: str, update: Any) -> dict[str, Any]:
+    """A compact, JSON-friendly summary of one graph node's state update."""
+    event: dict[str, Any] = {"type": "progress", "node": node}
+    if not isinstance(update, dict):
+        return event
+    if node == "planner":
+        event["plan"] = [
+            {"id": t["id"], "kind": t["kind"], "description": t["description"][:200]}
+            for t in update.get("plan", [])
+        ]
+    elif "results" in update:
+        for task_id, r in update["results"].items():
+            event |= {
+                "task_id": task_id,
+                "status": r["status"],
+                "steps": r["steps"],
+                "evidence": len(r["evidence_keys"]),
+            }
+    elif node == "synthesizer":
+        event["citations"] = len(update.get("citations", []))
+    elif node == "verifier":
+        v = update.get("verification", {})
+        event |= {
+            "groundedness": v.get("groundedness"),
+            "claims": len(v.get("claims", [])),
+            "removed_claims": len(v.get("removed_claims", [])),
+        }
+    calls = update.get("llm_calls", [])
+    if calls:
+        event["llm_calls"] = len(calls)
+        event["tokens"] = sum(c["input_tokens"] + c["output_tokens"] for c in calls)
+    return event
+
+
 async def execute(
     deps: AgentDeps,
     checkpoint_db: Path,
     run_id: str,
     question: str | None,
+    on_event: EventSink | None = None,
 ) -> AgentState:
-    """Run a new thread (question given) or resume an existing one (question None)."""
+    """Run a new thread (question given) or resume an existing one (question None).
+    With ``on_event`` the graph is streamed and each node's update is reported."""
     checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
     async with AsyncSqliteSaver.from_conn_string(str(checkpoint_db)) as saver:
         graph = build_graph(deps).compile(checkpointer=saver)
@@ -113,16 +152,22 @@ async def execute(
             "configurable": {"thread_id": run_id},
             "recursion_limit": RECURSION_LIMIT,
         }
+        inputs: dict[str, Any] | None = {"run_id": run_id, "question": question}
         if question is None:
             snapshot = await graph.aget_state(config)
             if not snapshot.values:
                 raise ValueError(f"no checkpoint for run {run_id!r}")
             if not snapshot.next:
                 return dict(snapshot.values)  # type: ignore[return-value]
-            result = await graph.ainvoke(None, config)
-        else:
-            result = await graph.ainvoke({"run_id": run_id, "question": question}, config)
-        return result  # type: ignore[no-any-return]
+            inputs = None
+        if on_event is None:
+            result = await graph.ainvoke(inputs, config)
+            return result  # type: ignore[no-any-return]
+        async for chunk in graph.astream(inputs, config, stream_mode="updates"):
+            for node, update in chunk.items():
+                await on_event(progress_event(node, update))
+        final = await graph.aget_state(config)
+        return dict(final.values)  # type: ignore[return-value]
 
 
 def run_record(state: AgentState, meta: RunMeta) -> dict[str, Any]:
@@ -193,6 +238,8 @@ async def ask(
     resume: str | None = None,
     tools_factory: ToolsFactory = default_tools,
     deps_factory: Callable[[Settings, RoleModels, ToolProvider], AgentDeps] = build_deps,
+    on_event: EventSink | None = None,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     runs_dir = Path(settings.runs_dir)
     if resume:
@@ -200,7 +247,7 @@ async def ask(
         provider = meta.provider
     elif question:
         meta = RunMeta(
-            run_id=new_run_id(),
+            run_id=run_id or new_run_id(),
             question=question,
             provider=provider,
             models={},
@@ -219,7 +266,11 @@ async def ask(
         async with tools_factory(settings) as tools:
             deps = deps_factory(settings, specs, tools)
             state = await execute(
-                deps, Path(settings.checkpoint_db), meta.run_id, None if resume else meta.question
+                deps,
+                Path(settings.checkpoint_db),
+                meta.run_id,
+                None if resume else meta.question,
+                on_event,
             )
     except BaseException as exc:
         meta.wall_seconds += time.monotonic() - started

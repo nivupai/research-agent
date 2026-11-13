@@ -76,6 +76,21 @@ class Settings(BaseSettings):
     verifier_router_threshold: float = 0.75
     verifier_llm_model: str = "gemini:gemini-3.5-flash-lite"
 
+    # Serving (see bioagent.serve): API + Redis queue + worker
+    redis_url: str = "redis://localhost:6379/0"
+    api_key: SecretStr | None = None  # if set, requests need the X-API-Key header
+    rate_limit_per_minute: float = 30.0  # token bucket refill per client
+    rate_limit_burst: int = 10
+    semantic_cache_enabled: bool = True
+    semantic_cache_threshold: float = 0.95  # cosine similarity of the normalised question
+    semantic_cache_ttl_s: int = 7 * 24 * 3600
+    job_max_attempts: int = 3
+    job_retry_base_s: float = 5.0
+    job_ttl_s: int = 7 * 24 * 3600
+    worker_concurrency: int = 1
+    worker_metrics_port: int = 9101
+    otlp_endpoint: str | None = None  # e.g. http://localhost:4318 (Jaeger all-in-one)
+
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")
     runs_dir: Path = Path("results/runs")
