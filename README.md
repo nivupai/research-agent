@@ -312,9 +312,10 @@ notebook (4-bit) is the practical path for the full model.
   model on a free Colab/Kaggle T4 in 4-bit.
 * **Backends**: `VERIFIER_BACKEND=nli` (default) | `small_lora` | `llm` | `router`. The router
   uses the small model and escalates pairs whose top probability is below
-  `VERIFIER_ROUTER_THRESHOLD` to `VERIFIER_LLM_MODEL`; `scripts/eval_verifier.py` picks the
-  cheapest threshold within 1 point of the best val accuracy and writes the curve to
-  `results/verifier/eval.md`.
+  `VERIFIER_ROUTER_THRESHOLD` (default 0.75) to `VERIFIER_LLM_MODEL`.
+  `scripts/eval_verifier.py` writes the val escalation/accuracy/cost curve to
+  `results/verifier/eval.md`; 0.75 is the knee of that curve (about 31% of claims escalated,
+  ~3 points below all-LLM accuracy at ~30% of the cost; see `eval/reports/verifier_week7.md`).
 
 ## Development
 

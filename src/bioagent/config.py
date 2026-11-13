@@ -72,7 +72,8 @@ class Settings(BaseSettings):
     # (small model, escalating low-confidence pairs to the LLM); see bioagent.verify.backends
     verifier_backend: Literal["nli", "small_lora", "llm", "router"] = "nli"
     verifier_adapter_dir: Path = Path("models/verifier-lora")
-    verifier_router_threshold: float = 0.8
+    # 0.75: knee of the val accuracy/cost curve (eval/reports/verifier_week7.md)
+    verifier_router_threshold: float = 0.75
     verifier_llm_model: str = "gemini:gemini-3.5-flash-lite"
 
     # Agent runs

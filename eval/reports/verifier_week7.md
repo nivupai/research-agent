@@ -36,7 +36,13 @@ Gemini latency is amortised per pair over 20-pair batches; cost is list price (f
 | 0.95 | 96% | 0.897 | $0.211 |
 | 0.99 | 100% | 0.893 | $0.220 |
 
-Chosen threshold: 0.95 (cheapest within 1 point of the best val accuracy).
+Automatic rule: 0.95 (cheapest within 1 point of the best val accuracy), but that escalates
+96% of claims and saves almost nothing over calling the LLM for every claim.
+
+**Chosen default: 0.75** (`VERIFIER_ROUTER_THRESHOLD`), the knee of the accuracy/cost curve:
+31% of claims escalated, val accuracy 0.867 vs 0.893-0.897 for (nearly) all-LLM, at about 30%
+of the all-LLM cost ($0.069 vs $0.220 per 1k claims). Set by the project owner on 2026-11-13
+from this local-adapter curve; revisit once the 600-step T4 adapter is evaluated.
 
 Confusion matrices (rows = reference, columns = prediction) are in eval.json.
 
@@ -44,7 +50,7 @@ Confusion matrices (rows = reference, columns = prediction) are in eval.json.
 ## Smoke suite with the router verifier vs the NLI verifier
 
 Same 50 saved smoke answers re-scored (agent answers unchanged; VERIFIER_BACKEND=router with
-the local adapter and threshold 0.8 vs DeBERTa NLI), so only citation support and groundedness
+the local adapter and the earlier default threshold 0.8 vs DeBERTa NLI), so only citation support and groundedness
 can differ:
 
 ### Eval comparison: smoke-router vs baseline smoke-baseline
