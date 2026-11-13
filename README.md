@@ -317,6 +317,43 @@ notebook (4-bit) is the practical path for the full model.
   `results/verifier/eval.md`; 0.75 is the knee of that curve (about 31% of claims escalated,
   ~3 points below all-LLM accuracy at ~30% of the cost; see `eval/reports/verifier_week7.md`).
 
+## Serving: API, queue, worker, cache and tracing (`bioagent.serve`)
+
+```bash
+make serve-up      # docker compose --profile serve: api, worker, redis, jaeger (+ neo4j)
+make serve-deps    # or: only redis + jaeger in containers, then in two terminals:
+make serve-api     #   uv run bioagent serve   (http://127.0.0.1:8000/docs)
+make serve-worker  #   uv run bioagent worker
+curl -s -XPOST localhost:8000/v1/ask -H 'content-type: application/json' \
+     -d '{"question": "Which approved drugs act on AMPK?"}'
+curl -N localhost:8000/v1/jobs/<job_id>/events    # SSE progress, then the final answer
+```
+
+* **API** (FastAPI): `POST /v1/ask` returns 202 with a job id (or a completed job straight
+  away on a semantic-cache hit); `GET /v1/jobs/{id}` gives status, the result (answer,
+  references, claim table, plan) and a per-query cost/latency summary;
+  `GET /v1/jobs/{id}/events` streams Server-Sent Events: `queued`, `running`, `progress`
+  (one per graph node: plan, each task's result, verification), `retrying`, `final`.
+  `/healthz`, `/readyz` (Redis), `/metrics` (Prometheus). Optional `API_KEY` (send
+  `X-API-Key`); per-client token bucket (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_BURST`) -> 429.
+* **Queue and worker**: Redis list + delayed set + per-job event streams. `bioagent worker`
+  runs the LangGraph pipeline with one shared MCP tool hub; transient errors are retried
+  with exponential backoff (`JOB_MAX_ATTEMPTS`, `JOB_RETRY_BASE_S`) and resume the same run's
+  checkpoint; exhausted LLM quota fails the job with a clear message.
+* **Semantic cache**: the normalised question is embedded with the corpus embedder
+  (bge-small) and compared with cached questions; cosine >= `SEMANTIC_CACHE_THRESHOLD` (0.95)
+  returns the cached answer. Entries are scoped by a version hash of the corpus fingerprint,
+  models, verifier setup and prompts, expire after `SEMANTIC_CACHE_TTL_S`, and `no_cache: true`
+  skips the lookup.
+* **Tracing** (`OTLP_ENDPOINT`, Jaeger UI on http://localhost:16686): `api.ask` ->
+  `queue.enqueue` -> `worker.job` -> `graph.node.<name>` -> `llm.call` / `mcp.tool`, with model,
+  tokens in/out, latency, list-price cost and cache-hit attributes. Metrics: requests, jobs,
+  node/LLM latency histograms, tokens, cost, tool calls, cache hits/misses, rate limiting
+  (API `/metrics`, worker on `WORKER_METRICS_PORT`).
+* The image includes the `models` extra (torch), so it is large; data, indexes, results,
+  adapters and the Hugging Face cache are mounted, not copied. The sandbox MCP server needs
+  Docker, which the worker container does not have, so `run_python` is unavailable there.
+
 ## Development
 
 ```bash

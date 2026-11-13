@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa serve-up serve-down serve-deps serve-api serve-worker smoke
 
 install:
 	uv sync --extra models
@@ -96,6 +96,23 @@ eval-calibration:
 
 judge-kappa:
 	uv run bioagent eval kappa eval/labels/judge_calibration.jsonl
+
+# Serving (see "Serving" in the README). Full stack in containers:
+serve-up:
+	docker compose --profile serve up -d --build
+
+serve-down:
+	docker compose --profile serve stop api worker redis jaeger
+
+# Or run API and worker from this checkout with only Redis + Jaeger in containers:
+serve-deps:
+	docker compose --profile serve up -d redis jaeger
+
+serve-api:
+	OTLP_ENDPOINT=$(or $(OTLP_ENDPOINT),http://localhost:4318) uv run bioagent serve
+
+serve-worker:
+	OTLP_ENDPOINT=$(or $(OTLP_ENDPOINT),http://localhost:4318) uv run bioagent worker
 
 smoke:
 	uv run python scripts/smoke_literature.py
