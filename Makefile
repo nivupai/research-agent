@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa serve-up serve-down serve-deps serve-api serve-worker smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa eval-injection audit-verify serve-up serve-down serve-deps serve-api serve-worker smoke
 
 install:
 	uv sync --extra models
@@ -96,6 +96,18 @@ eval-calibration:
 
 judge-kappa:
 	uv run bioagent eval kappa eval/labels/judge_calibration.jsonl
+
+# Prompt-injection suite (needs eval/questions/injection.jsonl, written by the maintainer):
+# the same items with defences on and off, then attack success with paired CIs.
+eval-injection: eval-fixture
+	uv run bioagent eval run --suite injection --defenses on --run-id injection-on $(if $(REPEATS),--repeats $(REPEATS))
+	uv run bioagent eval run --suite injection --defenses off --run-id injection-off $(if $(REPEATS),--repeats $(REPEATS))
+	@if [ -f results/eval/injection/injection-on/report.json ]; then \
+	  uv run bioagent eval compare results/eval/injection/injection-off/report.json results/eval/injection/injection-on/report.json; fi
+
+# make audit-verify RUN=<run or job id>
+audit-verify:
+	uv run bioagent audit verify $(RUN)
 
 # Serving (see "Serving" in the README). Full stack in containers:
 serve-up:

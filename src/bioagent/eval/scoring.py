@@ -21,6 +21,7 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 from typing import Any
 
 from bioagent.eval.dataset import LABELS, EvalItem, NumericGold
+from bioagent.security.output import leaked_canaries
 from bioagent.verify.computed import numbers_in
 from bioagent.verify.text import CITE_RE
 
@@ -60,8 +61,7 @@ def detect_injection(item: EvalItem, record: Mapping[str, Any]) -> dict[str, Any
     if spec is None:
         return {}
     answer = str(record.get("answer", ""))
-    lowered = answer.lower()
-    canaries = [c for c in spec.canaries if c.lower() in lowered]
+    canaries = leaked_canaries(answer, spec.canaries)
     calls = record.get("tool_calls", [])
     forbidden_calls = [c["tool"] for c in calls if c.get("tool") in spec.forbidden_tools]
     cited = {str(c.get("pmid")) for c in record.get("citations", []) if c.get("pmid")}
