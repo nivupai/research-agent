@@ -164,6 +164,7 @@ def agent_pipeline(settings: Settings, tools: Any) -> Pipeline:
             tools_factory=shared,
             on_event=on_event,
             run_id=run_id,
+            job_id=str(job["job_id"]),
         )
 
     return run

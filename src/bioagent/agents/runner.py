@@ -18,10 +18,13 @@ from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from bioagent.agents.graph import build_graph
 from bioagent.agents.nodes import AgentDeps, RoleModel
 from bioagent.agents.state import AgentState
-from bioagent.agents.tools import MCPToolHub, ToolProvider
+from bioagent.agents.tools import TOOL_SCOPES, MCPToolHub, ToolProvider
+from bioagent.agents.untrusted import new_run_mark, set_run_mark
 from bioagent.config import Settings
 from bioagent.llm.providers import RoleModels, make_chat_model, role_specs
 from bioagent.llm.stats import summarize
+from bioagent.security.audit import AuditLog, audit, sha256, use_audit
+from bioagent.security.policy import ToolPolicy
 from bioagent.verify.backends import make_scorer, windowed
 from bioagent.verify.verifier import ClaimVerifier, VerifyConfig
 
@@ -84,6 +87,8 @@ def build_claim_verifier(settings: Settings) -> ClaimVerifier | None:
 def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> AgentDeps:
     return AgentDeps(
         claim_verifier=build_claim_verifier(settings),
+        policy=ToolPolicy(TOOL_SCOPES) if settings.security_defenses else None,
+        defenses=settings.security_defenses,
         planner=RoleModel(specs.planner, make_chat_model(specs.planner, settings)),
         specialist=RoleModel(specs.specialist, make_chat_model(specs.specialist, settings)),
         synth=RoleModel(specs.synth, make_chat_model(specs.synth, settings)),
@@ -240,6 +245,7 @@ async def ask(
     deps_factory: Callable[[Settings, RoleModels, ToolProvider], AgentDeps] = build_deps,
     on_event: EventSink | None = None,
     run_id: str | None = None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     runs_dir = Path(settings.runs_dir)
     if resume:
@@ -262,26 +268,55 @@ async def ask(
     meta.save(runs_dir)
 
     started = time.monotonic()
+    log = AuditLog(Path(settings.audit_dir), meta.run_id, job_id, settings.audit_sqlite)
+    set_run_mark(new_run_mark() if settings.security_defenses else None)
     try:
-        async with tools_factory(settings) as tools:
-            deps = deps_factory(settings, specs, tools)
-            state = await execute(
-                deps,
-                Path(settings.checkpoint_db),
-                meta.run_id,
-                None if resume else meta.question,
-                on_event,
+        with use_audit(log):
+            audit(
+                "run_start" if not resume else "run_resume",
+                question_sha256=sha256(meta.question),
+                question_chars=len(meta.question),
+                models=meta.models,
+                defenses=settings.security_defenses,
+                attempt=meta.attempts,
             )
+            async with tools_factory(settings) as tools:
+                deps = deps_factory(settings, specs, tools)
+                state = await execute(
+                    deps,
+                    Path(settings.checkpoint_db),
+                    meta.run_id,
+                    None if resume else meta.question,
+                    on_event,
+                )
     except BaseException as exc:
         meta.wall_seconds += time.monotonic() - started
         meta.status = "failed"
         meta.save(runs_dir)
+        log.append("run_failed", {"error_type": type(exc).__name__})
         exc.add_note(f"run_id={meta.run_id}")
         raise
+    finally:
+        set_run_mark(None)
     meta.wall_seconds += time.monotonic() - started
     meta.status = "completed"
     meta.save(runs_dir)
     record = run_record(state, meta)
+    stats = record["stats"]
+    log.append(
+        "run_end",
+        {
+            "answer_sha256": sha256(record["answer"]),
+            "cited_pmids": sorted({str(c["pmid"]) for c in record["citations"] if c["pmid"]}),
+            "llm_calls": stats.get("llm_calls"),
+            "tool_calls": stats.get("tool_calls"),
+            "input_tokens": stats.get("input_tokens"),
+            "output_tokens": stats.get("output_tokens"),
+            "cost_usd": stats.get("cost_usd"),
+            "wall_seconds": stats.get("wall_seconds"),
+        },
+    )
+    record["audit_log"] = str(log.path)
     (runs_dir / f"{meta.run_id}.json").write_text(
         json.dumps(record, indent=2, ensure_ascii=False, default=str)
     )

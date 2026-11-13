@@ -7,6 +7,7 @@ import time
 from collections.abc import Iterable
 from typing import Any, TypedDict
 
+from bioagent.security.audit import audit
 from bioagent.telemetry import record_llm_call, record_tool_call
 
 
@@ -40,6 +41,17 @@ class RunStatsCollector:
     def add_llm(self, record: LLMCallRecord) -> None:
         self.llm_calls.append(record)
         record_llm_call(record)  # span + Prometheus counters
+        audit(
+            "llm_call",
+            role=record["role"],
+            task_id=record["task_id"],
+            model=f"{record['provider']}:{record['model']}",
+            input_tokens=record["input_tokens"],
+            output_tokens=record["output_tokens"],
+            cost_usd=record["cost_usd"],
+            latency_ms=record["latency_ms"],
+            retries=record["retries"],
+        )
 
     def add_tool(
         self, task_id: str, tool: str, ok: bool, started: float, error: str | None = None

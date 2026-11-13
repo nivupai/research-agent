@@ -369,6 +369,7 @@ def settings_for(tmp_path: Path) -> Settings:
         _env_file=None,
         checkpoint_db=tmp_path / "ck.sqlite",  # type: ignore[call-arg]
         runs_dir=tmp_path / "runs",
+        audit_dir=tmp_path / "audit",
         gemini_api_key=None,
     )
 
