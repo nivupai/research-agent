@@ -7,6 +7,8 @@ import time
 from collections.abc import Iterable
 from typing import Any, TypedDict
 
+from bioagent.telemetry import record_llm_call, record_tool_call
+
 
 class LLMCallRecord(TypedDict):
     role: str
@@ -37,19 +39,20 @@ class RunStatsCollector:
 
     def add_llm(self, record: LLMCallRecord) -> None:
         self.llm_calls.append(record)
+        record_llm_call(record)  # span + Prometheus counters
 
     def add_tool(
         self, task_id: str, tool: str, ok: bool, started: float, error: str | None = None
     ) -> None:
-        self.tool_calls.append(
-            ToolCallRecord(
-                task_id=task_id,
-                tool=tool,
-                ok=ok,
-                latency_ms=int((time.monotonic() - started) * 1000),
-                error=error[:300] if error else None,
-            )
+        record = ToolCallRecord(
+            task_id=task_id,
+            tool=tool,
+            ok=ok,
+            latency_ms=int((time.monotonic() - started) * 1000),
+            error=error[:300] if error else None,
         )
+        self.tool_calls.append(record)
+        record_tool_call(record)
 
     def update(self) -> dict[str, Any]:
         return {"llm_calls": self.llm_calls, "tool_calls": self.tool_calls}

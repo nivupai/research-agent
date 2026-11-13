@@ -22,19 +22,20 @@ from bioagent.agents.nodes import (
     route_ready,
 )
 from bioagent.agents.state import TASK_KINDS, AgentState
+from bioagent.telemetry import traced_node
 
 
 def build_graph(deps: AgentDeps) -> Any:
     """Return an uncompiled ``StateGraph`` (typed as Any: LangGraph's node overloads do not
     model closures over different input schemas such as the Send payload)."""
     graph: Any = StateGraph(AgentState)
-    graph.add_node("planner", make_planner(deps))
+    graph.add_node("planner", traced_node("planner", make_planner(deps)))
     graph.add_node("dispatch", dispatch)
     for kind in TASK_KINDS:
-        graph.add_node(kind, make_specialist(kind, deps))
+        graph.add_node(kind, traced_node(kind, make_specialist(kind, deps)))
         graph.add_edge(kind, "dispatch")
-    graph.add_node("synthesizer", make_synthesizer(deps))
-    graph.add_node("verifier", make_verifier(deps))
+    graph.add_node("synthesizer", traced_node("synthesizer", make_synthesizer(deps)))
+    graph.add_node("verifier", traced_node("verifier", make_verifier(deps)))
     graph.add_edge(START, "planner")
     graph.add_edge("planner", "dispatch")
     graph.add_conditional_edges("dispatch", route_ready, [*TASK_KINDS, "synthesizer"])
