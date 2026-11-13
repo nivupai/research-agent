@@ -98,9 +98,17 @@ def main(argv: list[str] | None = None) -> int:
     ask_p.add_argument("--json", action="store_true", help="print the run record as JSON")
     ask_p.add_argument("--no-verify", action="store_true", help="skip claim-level NLI verification")
     from bioagent.eval.cli import add_parser as add_eval_parser
+    from bioagent.serve.cli import add_parsers as add_serve_parsers
 
     add_eval_parser(sub)
+    add_serve_parsers(sub)
     args = parser.parse_args(argv)
+    if args.command in ("serve", "worker"):
+        logging.basicConfig(level=logging.INFO)
+        quiet_http_logging()
+        from bioagent.serve.cli import run_api, run_worker
+
+        return run_api(args) if args.command == "serve" else run_worker(args)
     if args.command == "eval":
         logging.basicConfig(level=logging.WARNING)
         quiet_http_logging()
