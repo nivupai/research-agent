@@ -270,11 +270,52 @@ verdicts are cached in `data/eval/cache.sqlite` by (question, answer hash, judge
 version, kind). Judge calibration: `eval/labels/judge_calibration.jsonl` has a stratified
 sample of 40 judged answers with an empty `human_label` for a person to fill in.
 
-**CI gate** (`.github/workflows/eval.yml`): on pull requests (and `workflow_dispatch`) it builds
-the eval index, runs the smoke suite at repeats=2 on flash-lite and fails on a significant
-accuracy drop against `eval/baselines/smoke.json`; the tables go to the job summary. It runs
-only if the repository secret `GEMINI_API_KEY` exists (fork PRs never get it) and is skipped
-with the `skip-eval` label. `NCBI_API_KEY` is optional (faster efetch).
+**CI gate** (`.github/workflows/eval.yml`, opt-in): it builds the eval index, runs the smoke
+suite at repeats=2 on flash-lite and fails on a significant accuracy drop against
+`eval/baselines/smoke.json`; the tables go to the job summary. One run uses roughly 340
+flash-lite calls (most of a free-tier daily quota), so it only runs when started by hand
+(Actions > Eval gate > Run workflow) or on a pull request with the `run-eval` label (when the
+label is added and on each later push). It is skipped with a notice if the repository secret
+`GEMINI_API_KEY` is missing (fork PRs never get it). `NCBI_API_KEY` is optional.
+
+## Fine-tuned small claim verifier (`bioagent.finetune`)
+
+```bash
+uv run python scripts/make_verifier_data.py          # pairs, teacher labels, NLI baseline, splits
+uv run python scripts/make_verifier_data.py bundle   # data/finetune/verifier_bundle.zip
+# full training: notebooks/train_verifier_lora.ipynb on a free Colab/Kaggle T4 (upload the
+# bundle, Run all, download verifier-lora.zip), then: unzip verifier-lora.zip -d models/
+uv run python scripts/train_verifier_lora.py --steps 150 --grad-checkpointing \
+    --batch 2 --accum 4 --max-length 384 --out models/verifier-lora-local   # local fallback
+uv run python scripts/eval_verifier.py               # models/verifier-lora, else -local
+```
+
+On a 17 GB Apple-silicon Mac the local script only fits with gradient checkpointing (batch
+2 x 384 tokens: ~9.5 s per 4 examples, so ~6 h for the notebook's 600 x 16 examples); the T4
+notebook (4-bit) is the practical path for the full model.
+
+* **Pairs** (~3.2k, deduped): claims from saved runs/eval answers with their cited passages,
+  results sentences paired with their own abstract, same-topic passages from other papers
+  (BM25 neighbours), and rule-based perturbations (negation, direction swap, entity swap,
+  changed numbers). Splits are by PMID (no paper in two splits); cross-paper pairs only use
+  papers of the same split.
+* **Labels**: a Gemini teacher (flash-lite, 20 pairs per structured call, cached, resumable,
+  stops cleanly when the quota runs out) labels SUPPORTED / CONTRADICTED / NOT_ENOUGH_INFO;
+  DeBERTa-v3-large NLI is recorded for every pair as a second baseline.
+  `eval/labels/verifier_test_human.jsonl` has 150 test pairs with an empty `human_label` for
+  spot-labelling (teacher-vs-human agreement); no labels are invented.
+* **Model**: Qwen/Qwen3-1.7B (Apache-2.0) with a 3-way classification head and LoRA (r=16) on
+  the attention and MLP projections. A classifier rather than label generation: one forward
+  pass gives class probabilities (needed by the router) and nothing has to be parsed.
+  Adapters go to `models/verifier-lora/` (gitignored) with `training.json`
+  (params, steps, time, peak memory). `notebooks/train_verifier_lora.ipynb` trains the same
+  model on a free Colab/Kaggle T4 in 4-bit.
+* **Backends**: `VERIFIER_BACKEND=nli` (default) | `small_lora` | `llm` | `router`. The router
+  uses the small model and escalates pairs whose top probability is below
+  `VERIFIER_ROUTER_THRESHOLD` (default 0.75) to `VERIFIER_LLM_MODEL`.
+  `scripts/eval_verifier.py` writes the val escalation/accuracy/cost curve to
+  `results/verifier/eval.md`; 0.75 is the knee of that curve (about 31% of claims escalated,
+  ~3 points below all-LLM accuracy at ~30% of the cost; see `eval/reports/verifier_week7.md`).
 
 ## Development
 

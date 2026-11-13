@@ -33,6 +33,7 @@ bioagent = "bioagent.cli:main"
 
 [project.optional-dependencies]
 models = [
+    "peft>=0.17",
     "sentence-transformers>=6.3.0",
     "transformers>=5.22",
 ]
@@ -73,7 +74,7 @@ packages = ["bioagent"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["respx.*", "rank_bm25.*", "sentence_transformers.*", "torch.*", "transformers.*"]
+module = ["peft.*", "respx.*", "rank_bm25.*", "sentence_transformers.*", "torch.*", "transformers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -22,7 +22,7 @@ from bioagent.agents.tools import MCPToolHub, ToolProvider
 from bioagent.config import Settings
 from bioagent.llm.providers import RoleModels, make_chat_model, role_specs
 from bioagent.llm.stats import summarize
-from bioagent.verify.nli import TransformersNLI
+from bioagent.verify.backends import make_scorer, windowed
 from bioagent.verify.verifier import ClaimVerifier, VerifyConfig
 
 RECURSION_LIMIT = 60
@@ -71,11 +71,12 @@ def build_claim_verifier(settings: Settings) -> ClaimVerifier | None:
             "or run with --no-verify"
         )
     return ClaimVerifier(
-        TransformersNLI(settings.nli_model, device=settings.nli_device),
+        make_scorer(settings),
         VerifyConfig(
             entail_threshold=settings.nli_entail_threshold,
             contradiction_threshold=settings.nli_contradiction_threshold,
             policy=settings.verify_policy,
+            windowed=windowed(settings.verifier_backend),
         ),
     )
 

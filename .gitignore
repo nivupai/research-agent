@@ -19,6 +19,8 @@ htmlcov/
 # Data, indexes, eval outputs and model caches (configs/ is committed)
 data/
 results/
+# fine-tuned adapters and checkpoints (see bioagent.finetune)
+models/
 .cache/
 .hf_cache/
 *.sqlite

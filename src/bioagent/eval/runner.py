@@ -158,12 +158,16 @@ def eval_servers(
 def make_verifier(enabled: bool, settings: Settings) -> Any:
     if not enabled:
         return None
-    from bioagent.verify.nli import TransformersNLI
+    from bioagent.verify.backends import make_scorer, windowed
     from bioagent.verify.verifier import ClaimVerifier, VerifyConfig
 
     return ClaimVerifier(
-        TransformersNLI(settings.nli_model, device=settings.nli_device),
-        VerifyConfig(entail_threshold=settings.nli_entail_threshold, policy="flag"),
+        make_scorer(settings),
+        VerifyConfig(
+            entail_threshold=settings.nli_entail_threshold,
+            policy="flag",
+            windowed=windowed(settings.verifier_backend),
+        ),
     )
 
 
