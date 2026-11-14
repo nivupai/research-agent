@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa eval-injection audit-verify serve-up serve-down serve-deps serve-api serve-worker smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa eval-injection audit-verify k8s-up k8s-load-image k8s-deploy k8s-down k8s-lint serve-up serve-down serve-deps serve-api serve-worker smoke
 
 install:
 	uv sync --extra models
@@ -108,6 +108,34 @@ eval-injection: eval-fixture
 # make audit-verify RUN=<run or job id>
 audit-verify:
 	uv run bioagent audit verify $(RUN)
+
+# Kubernetes on kind (see "Kubernetes" in the README): cluster + KEDA, image, chart.
+KIND_CLUSTER ?= bioagent
+K8S_IMAGE ?= bioagent:slim
+HELM_VALUES ?= deploy/kind/values-kind.yaml
+CRD_SCHEMAS = https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+
+k8s-up:
+	mkdir -p data/kind-volume
+	kind create cluster --config deploy/kind/kind-config.yaml --name $(KIND_CLUSTER)
+	helm repo add kedacore https://kedacore.github.io/charts --force-update
+	helm upgrade --install keda kedacore/keda --namespace keda --create-namespace --wait
+
+# slim image by default (no torch); K8S_IMAGE=bioagent:latest UV_EXTRAS="--extra models" for the full one
+k8s-load-image:
+	docker build --build-arg UV_EXTRAS="$(UV_EXTRAS)" -t $(K8S_IMAGE) .
+	kind load docker-image $(K8S_IMAGE) --name $(KIND_CLUSTER)
+
+k8s-deploy:
+	helm upgrade --install bioagent deploy/helm/bioagent -f $(HELM_VALUES) --wait --timeout 5m
+
+k8s-down:
+	kind delete cluster --name $(KIND_CLUSTER)
+
+k8s-lint:
+	helm lint deploy/helm/bioagent
+	helm template t deploy/helm/bioagent | kubeconform -strict -summary -schema-location default -schema-location '$(CRD_SCHEMAS)' -
+	helm template t deploy/helm/bioagent -f $(HELM_VALUES) | kubeconform -strict -summary -schema-location default -schema-location '$(CRD_SCHEMAS)' -
 
 # Serving (see "Serving" in the README). Full stack in containers:
 serve-up:

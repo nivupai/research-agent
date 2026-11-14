@@ -1,0 +1,30 @@
+# kind demo: slim image (no torch), replay pipeline (no LLM calls), KEDA queue autoscaling.
+# For the real agent use the full image (docker build -t bioagent:latest .), set
+# image.tag=latest and worker.pipeline=agent, and create the bioagent-secrets Secret.
+image:
+  repository: bioagent
+  tag: slim
+  pullPolicy: IfNotPresent
+worker:
+  pipeline: replay
+  replaySeconds: 20
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+api:
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+config:
+  SEMANTIC_CACHE_ENABLED: "false"   # the slim image has no embedding model
+autoscaling:
+  mode: keda
+  minReplicas: 1
+  maxReplicas: 4
+  keda:
+    listLength: "2"
+    pollingInterval: 5
+    cooldownPeriod: 30
+persistence:
+  enabled: true
+  hostPath: /bioagent-data
