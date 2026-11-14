@@ -1,0 +1,42 @@
+{{- if eq .Values.autoscaling.mode "keda" }}
+# Scale workers on the Redis ready-queue length (KEDA must be installed in the cluster).
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "bioagent.fullname" . }}-worker
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "bioagent.fullname" . }}-worker
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.keda.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.keda.cooldownPeriod }}
+  triggers:
+    - type: redis
+      metadata:
+        address: {{ printf "%s-redis:6379" (include "bioagent.fullname" .) | quote }}
+        listName: "bioagent:queue"
+        listLength: {{ .Values.autoscaling.keda.listLength | quote }}
+        databaseIndex: "0"
+{{- else if eq .Values.autoscaling.mode "hpa" }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "bioagent.fullname" . }}-worker
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "bioagent.fullname" . }}-worker
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.hpa.targetCPUUtilizationPercentage }}
+{{- end }}

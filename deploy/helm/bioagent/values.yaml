@@ -1,0 +1,107 @@
+# Default values for the bioagent chart. Secrets are never set here: create them with
+#   kubectl create secret generic bioagent-secrets --from-literal=GEMINI_API_KEY=... \
+#     --from-literal=NEO4J_PASSWORD=... [--from-literal=API_KEY=...]
+# or pass a values file you keep outside the repo with `secrets.create: true` (see README).
+
+image:
+  repository: bioagent
+  tag: slim            # build: docker build --build-arg UV_EXTRAS= -t bioagent:slim .
+  pullPolicy: IfNotPresent
+
+# Non-secret settings, passed as environment variables (pydantic settings names, upper case).
+config:
+  LLM_PROVIDER: gemini
+  SEMANTIC_CACHE_ENABLED: "true"
+  SEMANTIC_CACHE_THRESHOLD: "0.95"
+  RATE_LIMIT_PER_MINUTE: "30"
+  RATE_LIMIT_BURST: "10"
+  SECURITY_DEFENSES: "true"
+  JOB_MAX_ATTEMPTS: "3"
+  CORPUS_DB: /app/data/corpus/corpus.sqlite
+  INDEX_DIR: /app/data/indexes
+  AUDIT_DIR: /app/data/audit
+  RUNS_DIR: /app/results/runs
+  CHECKPOINT_DB: /app/data/checkpoints.sqlite
+  MCP_LOG_DIR: /app/data/logs
+
+secrets:
+  # Name of an existing Secret with GEMINI_API_KEY, NEO4J_PASSWORD, API_KEY, NCBI_API_KEY.
+  existingSecret: bioagent-secrets
+  # Only for throwaway clusters: render the Secret from values given at install time
+  # (helm install ... -f my-secrets.yaml, never committed).
+  create: false
+  values: {}
+
+api:
+  replicas: 1
+  port: 8000
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: "1", memory: 1Gi}
+
+worker:
+  pipeline: agent        # agent | replay (fixed answers, no LLM: smoke tests and scaling demos)
+  replaySeconds: 20
+  concurrency: 1
+  replicas: 1            # used when autoscaling is off
+  metricsPort: 9101
+  resources:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {cpu: "2", memory: 3Gi}
+
+autoscaling:
+  # keda: scale workers on the Redis queue length (needs KEDA installed in the cluster);
+  # hpa: scale on CPU (metrics-server); none: fixed worker.replicas.
+  mode: keda
+  minReplicas: 1
+  maxReplicas: 5
+  keda:
+    listLength: "2"          # target ready jobs per worker
+    pollingInterval: 5
+    cooldownPeriod: 30
+  hpa:
+    targetCPUUtilizationPercentage: 70
+
+redis:
+  enabled: true              # false: set externalUrl
+  externalUrl: ""
+  image: redis:7.4-alpine
+  persistence:
+    enabled: false
+    size: 1Gi
+  resources:
+    requests: {cpu: 50m, memory: 64Mi}
+    limits: {cpu: 500m, memory: 256Mi}
+
+jaeger:
+  enabled: false
+  image: jaegertracing/all-in-one:1.62.0
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+
+neo4j:
+  uri: ""                    # e.g. bolt://neo4j.default.svc:7687; empty: graph tools fail softly
+
+# Corpus, indexes, checkpoints, audit logs: one volume mounted at /app/data.
+persistence:
+  enabled: true
+  existingClaim: ""
+  size: 5Gi
+  storageClass: ""
+  hostPath: ""               # kind: a path mounted into the node (see deploy/kind)
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: ["ALL"]}
