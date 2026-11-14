@@ -40,6 +40,9 @@ from bioagent.agents.tools import (
 from bioagent.agents.untrusted import wrap_untrusted
 from bioagent.llm.providers import ModelSpec, QuotaExhaustedError, ainvoke_with_stats
 from bioagent.llm.stats import RunStatsCollector
+from bioagent.security.audit import args_digest, audit
+from bioagent.security.output import check_answer, redact_unknown_pmids
+from bioagent.security.policy import Decision, TaskContext, ToolPolicy
 from bioagent.verify.text import (
     CITE_RE,
     ESTIMATE_RE,
@@ -81,6 +84,9 @@ class AgentDeps:
     specialists: dict[str, RoleModel] = field(default_factory=dict)
     # Claim-level verification (NLI); None keeps only the citation checks.
     claim_verifier: ClaimVerifier | None = None
+    # Prompt-injection defences (SECURITY_DEFENSES): tool-argument policy and output checks.
+    policy: ToolPolicy | None = None
+    defenses: bool = False
     # Test hook: called at the start of each specialist (e.g. to inject a failure).
     on_specialist_start: Callable[[str], None] | None = field(default=None)
 
@@ -192,6 +198,20 @@ def make_planner(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, 
             )
             errors.append("planner fell back to a single literature task")
         tasks, notes = enforce_task_kinds(plan.tasks, state["question"])
+        audit(
+            "plan",
+            tasks=[
+                {
+                    "id": t.id,
+                    "kind": t.kind,
+                    "depends_on": t.depends_on,
+                    "drug_target": t.drug_target,
+                }
+                for t in tasks
+            ],
+            notes=notes,
+            errors=errors,
+        )
         return {
             "plan": [t.model_dump() for t in tasks],
             "plan_rationale": plan.rationale,
@@ -276,6 +296,16 @@ async def _run_tool(
         result = {"result": result}
     error = result.get("error")
     stats.add_tool(task_id, name, error is None, started, error=str(error) if error else None)
+    audit(
+        "tool_call",
+        role="discovery",
+        task_id=task_id,
+        tool=name,
+        allowed=True,
+        ok=error is None,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        **args_digest(args),
+    )
     return result
 
 
@@ -410,10 +440,16 @@ def make_specialist(
         )
         evidence: dict[str, Evidence] = {}
         computed_count = 0
+        ctx = TaskContext(
+            question=inp["question"],
+            task=task.description,
+            notes=[n["summary"] for n in inp["dependency_notes"]],
+        )
         discovery: Discovery | None = None
         if kind == "literature" and task.drug_target and set(tools) >= DISCOVERY_TOOLS:
             discovery = await discover_drugs(task, tools, stats)
             evidence.update(discovery.evidence)
+            ctx.observe(discovery.prompt)
         messages: list[BaseMessage] = [
             SystemMessage(prompts.SPECIALISTS[kind]),
             HumanMessage(
@@ -433,16 +469,43 @@ def make_specialist(
                 break
             for call in ai.tool_calls:
                 name = call["name"]
+                args = dict(call.get("args") or {})
                 started = time.monotonic()
-                if name not in tools:
-                    stats.add_tool(task.id, name, False, started, error="not permitted")
+                decision = (
+                    deps.policy.check(kind, name, args, ctx)
+                    if deps.policy is not None
+                    else Decision(name in tools, "not permitted", "role_allowlist")
+                )
+                if decision.allowed and name not in tools:
+                    decision = Decision(False, "not permitted", "role_allowlist")
+                if not decision.allowed:
+                    reason = "not permitted" if deps.policy is None else decision.reason
+                    stats.add_tool(
+                        task.id,
+                        name,
+                        False,
+                        started,
+                        error=reason if deps.policy is None else f"policy: {reason}",
+                    )
+                    audit(
+                        "tool_call",
+                        role=kind,
+                        task_id=task.id,
+                        tool=name,
+                        allowed=False,
+                        check=decision.check,
+                        reason=decision.reason,
+                        **args_digest(args),
+                    )
                     content = (
                         f"Tool '{name}' is not available to the {kind} specialist. "
                         f"Available tools: {sorted(tools)}."
+                        if decision.check == "role_allowlist"
+                        else f"Tool call denied by policy ({decision.check}): {decision.reason}."
                     )
                 else:
                     try:
-                        result = await tools[name].ainvoke(call["args"])
+                        result = await tools[name].ainvoke(args)
                     except Exception as exc:  # tool crashed: report to the model
                         result = {"error": f"{type(exc).__name__}: {exc}"}
                     if not isinstance(result, dict):
@@ -451,13 +514,22 @@ def make_specialist(
                     stats.add_tool(
                         task.id, name, error is None, started, error=str(error) if error else None
                     )
-                    items = extract_evidence(
-                        name, result, task.id, start=computed_count, args=call["args"]
+                    audit(
+                        "tool_call",
+                        role=kind,
+                        task_id=task.id,
+                        tool=name,
+                        allowed=True,
+                        ok=error is None,
+                        latency_ms=int((time.monotonic() - started) * 1000),
+                        **args_digest(args),
                     )
+                    ctx.observe(result)
+                    items = extract_evidence(name, result, task.id, start=computed_count, args=args)
                     computed_count += sum(1 for e in items if e["computed"])
                     evidence.update({e["key"]: e for e in items})
                     content = wrap_untrusted(
-                        render_for_model(name, result, items), source=name, ref=task.id
+                        render_for_model(name, result, items), source=name, ref=task.id, tool=name
                     )
                 messages.append(ToolMessage(content=content, tool_call_id=call["id"], name=name))
         if final is None:
@@ -666,6 +738,31 @@ async def verifier(state: AgentState) -> dict[str, Any]:
 
 def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, Any]]]:
     async def verify(state: AgentState) -> dict[str, Any]:
+        update = await verify_claims(state)
+        answer = str(update.get("answer", state.get("answer", "")))
+        verification = update["verification"]
+        audit(
+            "verification",
+            claim_verification=verification.get("claim_verification"),
+            groundedness=verification.get("groundedness"),
+            claims=len(verification.get("claims", [])),
+            removed_claims=len(verification.get("removed_claims", [])),
+            invalid_citations=verification.get("invalid_citations", []),
+        )
+        if deps.defenses and answer.strip():
+            evidence = state.get("evidence", {})
+            report = check_answer(
+                answer,
+                {e["pmid"] for e in evidence.values() if e["pmid"]},
+                [e["text"] for e in evidence.values() if not e["computed"]],
+            )
+            if report.unknown_pmids:
+                update["answer"] = redact_unknown_pmids(answer, report.unknown_pmids)
+            verification["security"] = report.as_dict()
+            audit("output_check", **report.as_dict())
+        return update
+
+    async def verify_claims(state: AgentState) -> dict[str, Any]:
         base = await verifier(state)
         answer = state.get("answer", "")
         citations = state.get("citations", [])

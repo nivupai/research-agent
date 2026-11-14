@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     worker_metrics_port: int = 9101
     otlp_endpoint: str | None = None  # e.g. http://localhost:4318 (Jaeger all-in-one)
 
+    # Prompt-injection defences and audit log (see bioagent.security)
+    security_defenses: bool = True  # SECURITY_DEFENSES=off for the comparison runs
+    audit_dir: Path = Path("data/audit")
+    audit_sqlite: bool = False  # also mirror audit entries into data/audit/audit.sqlite
+
     # Agent runs
     checkpoint_db: Path = Path("data/checkpoints.sqlite")
     runs_dir: Path = Path("results/runs")

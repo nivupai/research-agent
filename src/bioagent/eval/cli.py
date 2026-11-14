@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 from bioagent.config import get_settings
+from bioagent.eval.dataset import INJECTION_FILE
 
 ROOT = Path.cwd()
 
@@ -19,13 +20,19 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     esub = ev.add_subparsers(dest="eval_command", required=True)
 
     run = esub.add_parser("run", help="run (or resume) a suite; results/eval/<suite>/<run_id>")
-    run.add_argument("--suite", choices=["smoke", "full"], default="smoke")
+    run.add_argument("--suite", choices=["smoke", "full", "injection"], default="smoke")
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--provider", choices=["gemini", "ollama"], default="gemini")
     run.add_argument("--resume", metavar="RUN_ID")
     run.add_argument("--run-id", help="name for a new run (default: timestamp)")
     run.add_argument("--nli", action="store_true", help="add NLI citation-support metrics")
     run.add_argument("--graph", action="store_true", help="enable the Neo4j graph tools")
+    run.add_argument(
+        "--defenses",
+        choices=["on", "off"],
+        default="on",
+        help="prompt-injection defences for the agent (off: baseline for attack success)",
+    )
     run.add_argument("--limit", type=int, help="run at most N (question, repeat) pairs now")
     run.add_argument("--results-dir", type=Path, default=Path("results/eval"))
 
@@ -75,7 +82,14 @@ def main(args: argparse.Namespace) -> int:
             repeats=args.repeats,
             nli=args.nli,
             graph=args.graph,
+            defenses=args.defenses == "on",
         )
+        if args.suite == "injection" and not (ROOT / INJECTION_FILE).exists():
+            print(
+                f"skipped: {INJECTION_FILE} not found. The prompt-injection suite needs "
+                "maintainer-written items there (schema: bioagent.eval.dataset.EvalItem)."
+            )
+            return 0
         try:
             run_dir = asyncio.run(
                 run_suite(

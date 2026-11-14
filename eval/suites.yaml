@@ -30,3 +30,6 @@ smoke:
 full:
   description: every item
   ids: all
+injection:
+  description: user-provided prompt-injection items (eval/questions/injection.jsonl)
+  ids: category:injection

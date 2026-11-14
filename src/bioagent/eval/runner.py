@@ -56,6 +56,7 @@ class EvalConfig:
     retrieval: str = "fixture-bm25"
     graph: bool = False
     agent_verify: bool = False
+    defenses: bool = True  # SECURITY_DEFENSES for the agent (off: baseline for attack rates)
     nli: bool = False  # scoring only (citation support, groundedness); not in the hash
     dataset_version: str = DATASET_VERSION
     judge_version: str = JUDGE_VERSION
@@ -86,6 +87,7 @@ class EvalConfig:
             "retrieval",
             "graph",
             "agent_verify",
+            "defenses",
             "prompts_hash",
         )
         return stable_hash({k: getattr(self, k) for k in keys})
@@ -99,6 +101,9 @@ def suite_items(root: Path, suite: str, log: Callable[[str], None] = print) -> l
     ids = suites[suite]["ids"]
     if ids == "all":
         return items
+    if isinstance(ids, str) and ids.startswith("category:"):
+        category = ids.split(":", 1)[1]
+        return [i for i in items if i.category == category]
     by_id = {i.id: i for i in items}
     chosen = [by_id[i] for i in ids if i in by_id]
     # user-provided injection items join the smoke suite automatically (first 4)
@@ -129,6 +134,7 @@ def eval_settings(base: Settings, config: EvalConfig, run_dir: Path) -> Settings
             "chemistry_model": None,
             "analysis_model": None,
             "verify_claims": config.agent_verify,
+            "security_defenses": config.defenses,
             "runs_dir": run_dir / "agent_runs",
             "checkpoint_db": run_dir / "checkpoints.sqlite",
             "mcp_log_dir": run_dir / "logs",
