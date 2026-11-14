@@ -1,0 +1,10 @@
+# Local cluster for the bioagent chart: make k8s-up (kind create cluster --config this file).
+# The data volume is a host directory mounted into the node and used via hostPath.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: bioagent
+nodes:
+  - role: control-plane
+    extraMounts:
+      - hostPath: ./data/kind-volume   # relative to the repo root (make k8s-up runs there)
+        containerPath: /bioagent-data

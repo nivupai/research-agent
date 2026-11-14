@@ -5,6 +5,7 @@ repos:
       - id: end-of-file-fixer
       - id: trailing-whitespace
       - id: check-yaml
+        exclude: ^deploy/helm/.*/templates/  # Go templates; checked by helm lint + kubeconform
       - id: detect-private-key
   # ruff and mypy run from the project environment so hooks, CI and `make lint` use the same
   # tool versions (pinned in uv.lock).

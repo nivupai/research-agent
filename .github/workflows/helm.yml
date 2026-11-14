@@ -1,0 +1,44 @@
+name: Helm
+
+# Lint and schema-check the chart without a cluster: helm lint, helm template for the main
+# value combinations, kubeconform against the Kubernetes schemas (+ the CRD catalog for KEDA).
+on:
+  push:
+    paths: ["deploy/**", ".github/workflows/helm.yml"]
+  pull_request:
+    paths: ["deploy/**", ".github/workflows/helm.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  chart:
+    runs-on: ubuntu-latest
+    env:
+      CHART: deploy/helm/bioagent
+      CRD_SCHEMAS: https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.16.4
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+      - name: helm lint
+        run: helm lint "$CHART" && helm lint "$CHART" -f deploy/kind/values-kind.yaml
+      - name: helm template + kubeconform
+        run: |
+          set -euo pipefail
+          for args in \
+            "" \
+            "-f deploy/kind/values-kind.yaml" \
+            "--set autoscaling.mode=hpa --set jaeger.enabled=true --set redis.persistence.enabled=true" \
+            "--set autoscaling.mode=none --set redis.enabled=false --set redis.externalUrl=redis://r:6379/0"; do
+            echo "== values: ${args:-defaults}"
+            # shellcheck disable=SC2086
+            helm template t "$CHART" $args \
+              | kubeconform -strict -summary -kubernetes-version 1.31.0 \
+                  -schema-location default -schema-location "$CRD_SCHEMAS" -
+          done

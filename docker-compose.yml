@@ -52,7 +52,7 @@ services:
     build: .
     image: bioagent:latest
     container_name: bioagent-api
-    command: ["uv", "run", "--no-sync", "bioagent", "serve", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["bioagent", "serve", "--host", "0.0.0.0", "--port", "8000"]
     env_file: [.env]
     environment:
       REDIS_URL: redis://redis:6379/0
@@ -77,7 +77,7 @@ services:
     profiles: ["serve"]
     image: bioagent:latest
     container_name: bioagent-worker
-    command: ["uv", "run", "--no-sync", "bioagent", "worker"]
+    command: ["bioagent", "worker"]
     env_file: [.env]
     environment:
       REDIS_URL: redis://redis:6379/0

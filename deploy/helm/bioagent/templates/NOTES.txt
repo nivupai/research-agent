@@ -1,0 +1,10 @@
+BioResearch Agent {{ .Chart.AppVersion }} (worker pipeline: {{ .Values.worker.pipeline }}, autoscaling: {{ .Values.autoscaling.mode }})
+
+  kubectl port-forward svc/{{ include "bioagent.fullname" . }}-api 8000:{{ .Values.api.service.port }}
+  curl -s -XPOST localhost:8000/v1/ask -H 'content-type: application/json' \
+       -d '{"question": "Which approved drugs act on AMPK?"}'
+
+Secrets come from the Secret "{{ include "bioagent.secretName" . }}" (GEMINI_API_KEY, NEO4J_PASSWORD, ...).
+{{- if eq .Values.autoscaling.mode "keda" }}
+Workers scale on the Redis queue length via KEDA (install KEDA first, see the README).
+{{- end }}

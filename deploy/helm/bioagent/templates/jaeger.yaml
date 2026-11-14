@@ -1,0 +1,45 @@
+{{- if .Values.jaeger.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bioagent.fullname" . }}-jaeger
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: jaeger
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {{- include "bioagent.selector" (dict "root" . "component" "jaeger") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "bioagent.selector" (dict "root" . "component" "jaeger") | nindent 8 }}
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: jaeger
+          image: {{ .Values.jaeger.image }}
+          env:
+            - {name: COLLECTOR_OTLP_ENABLED, value: "true"}
+          ports:
+            - {name: ui, containerPort: 16686}
+            - {name: otlp-http, containerPort: 4318}
+          readinessProbe:
+            httpGet: {path: /, port: ui}
+          resources: {{- toYaml .Values.jaeger.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bioagent.fullname" . }}-jaeger
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "bioagent.selector" (dict "root" . "component" "jaeger") | nindent 4 }}
+  ports:
+    - {name: ui, port: 16686, targetPort: ui}
+    - {name: otlp-http, port: 4318, targetPort: otlp-http}
+{{- end }}
