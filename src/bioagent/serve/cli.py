@@ -46,18 +46,32 @@ async def worker_main(settings: Settings, concurrency: int) -> None:
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, stop.set)
     cache = build_cache(settings, redis) if settings.semantic_cache_enabled else None
+    queue = JobQueue(redis, settings.job_ttl_s)
+    attempts, retry_base = settings.job_max_attempts, settings.job_retry_base_s
+    banner = f"concurrency {concurrency}, metrics :{settings.worker_metrics_port}"
     try:
+        if settings.worker_pipeline == "replay":
+            from bioagent.serve.replay import replay_pipeline
+
+            worker = Worker(
+                queue,
+                replay_pipeline(settings.replay_seconds),
+                cache,
+                max_attempts=attempts,
+                retry_base_s=retry_base,
+            )
+            print(f"worker ready (replay pipeline, {banner})", flush=True)
+            await worker.run_forever(stop, concurrency)
+            return
         async with MCPToolHub(log_dir=Path(settings.mcp_log_dir)) as hub:
             worker = Worker(
-                JobQueue(redis, settings.job_ttl_s),
+                queue,
                 agent_pipeline(settings, hub),
                 cache,
-                max_attempts=settings.job_max_attempts,
-                retry_base_s=settings.job_retry_base_s,
+                max_attempts=attempts,
+                retry_base_s=retry_base,
             )
-            print(
-                f"worker ready (concurrency {concurrency}, metrics :{settings.worker_metrics_port})"
-            )
+            print(f"worker ready (agent pipeline, {banner})", flush=True)
             await worker.run_forever(stop, concurrency)
     finally:
         await redis.aclose()
