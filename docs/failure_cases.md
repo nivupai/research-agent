@@ -122,11 +122,18 @@ Open issues are marked **open**.
 * **Root cause**: teacher leniency. Across the dataset the teacher labels 28% of synthetic
   contradiction pairs (negation, number change, role swap) SUPPORTED; DeBERTa NLI calls 16 of
   the 18 such test pairs CONTRADICTED.
-* **Status**: not fixed. The verifier comparison is scored against this reference, and the
-  LoRA was trained on it. Relabel, retrain and re-score after a human spot-check
-  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Fix tried**: reference v2 labels the edited pairs CONTRADICTED by construction; the
+  LoRA was retrained on it. Against v2 the retrained adapter catches 16 of the 18 edited
+  contradictions (v1: 10) and the router 17, but on real agent claims, whose labels did not
+  change, it is worse: 56 vs 65 of 80 correct (p = 0.012), with more NOT_ENOUGH_INFO claims
+  called SUPPORTED (16 vs 11 of 21).
+* **Status**: open. v1 stays the default adapter; v2 is selectable. Fixing the labels alone
+  taught the model the synthetic edit pattern, not better judgement on real claims
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md), section 8).
 * **Lesson**: a model-generated reference needs an independent check before it is used as
-  ground truth; a second rater found in an hour what accuracy numbers hid.
+  ground truth; a second rater found in an hour what accuracy numbers hid. And after a fix,
+  score the slice that matters (real claims) separately: the overall number improved while
+  that slice got worse.
 
 ## Evaluation
 

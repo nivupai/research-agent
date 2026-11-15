@@ -261,3 +261,56 @@ system; the ranking does not change. The LoRA here was trained on the uncorrecte
 the v2 numbers for it are a lower bound for a model retrained on the v2 bundle (needs the T4
 notebook, about 105 minutes, owner's decision). The router's test accuracy (0.865 vs teacher)
 had not been reported before; Week 7 reported its val accuracy only.
+
+## 8. Retrained on reference v2: better on edited contradictions, worse on real claims
+
+The owner retrained the LoRA on `verifier_bundle_v2.zip` with the same notebook and settings
+(600 steps, effective batch 16, QLoRA; this run on a Colab **L4**, the v1 adapter on a T4;
+63 min; notebook val accuracy 0.936 against the v2 reference). Adapter in
+`models/verifier-lora-v2/` (v1 untouched). Local scoring on Apple MPS, batch size 1:
+`scripts/verifier_probs.py --adapter models/verifier-lora-v2 --out
+results/verifier/small_probs_v2.json --timed`, then `scripts/compare_verifiers_v2.py`
+(Gemini labels from cache only). 252 test pairs:
+
+| system | accuracy vs v2 | macro-F1 vs v2 | F1 S / C / N (v2) | accuracy vs v1 teacher | p50 / p95 ms | $ per 1k claims |
+|---|---|---|---|---|---|---|
+| DeBERTa-v3-large NLI | 0.802 [0.750, 0.849] | 0.780 [0.730, 0.828] | 0.82 / 0.96 / 0.56 | 0.742 [0.687, 0.794] | 309 / 599 | 0 |
+| small LoRA v1 (teacher labels) | 0.845 [0.802, 0.889] | 0.801 [0.737, 0.857] | 0.89 / 0.82 / 0.70 | 0.833 [0.786, 0.877] | 545 / 706 | 0 |
+| small LoRA v2 (reference v2) | 0.861 [0.817, 0.901] | 0.801 [0.740, 0.856] | 0.90 / 0.94 / 0.57 | 0.802 [0.750, 0.849] | 616 / 824 | 0 |
+| Gemini verifier (flash-lite) | 0.885 [0.845, 0.925] | 0.855 [0.799, 0.904] | 0.92 / 0.86 / 0.79 | 0.885 [0.845, 0.921] | 113 (amortised) | 0.215 |
+| router v1 at 0.75 | 0.873 [0.829, 0.913] | 0.840 [0.781, 0.889] | 0.90 / 0.86 / 0.76 | 0.865 [0.821, 0.905] | - | 0.020 |
+| router v2 at 0.75 | 0.901 [0.861, 0.937] | 0.852 [0.793, 0.901] | 0.92 / 0.98 / 0.66 | 0.837 [0.790, 0.881] | - | 0.019 |
+
+(Against "v2 without swap": LoRA v1 0.825, LoRA v2 0.833, router v1 0.861, router v2 0.873,
+Gemini 0.881.)
+
+Paired tests (bootstrap CI, sign-flip p), v2 reference: LoRA v2 - LoRA v1 accuracy +0.016
+[-0.024, +0.056], p = 0.57, macro-F1 +0.001; LoRA v2 - NLI +0.059 [0.000, +0.115], p = 0.053;
+router v2 - router v1 +0.028 [-0.008, +0.068], p = 0.21; router v2 - Gemini +0.016
+[-0.028, +0.056], p = 0.59.
+
+**The 18 edited contradictions the teacher called SUPPORTED**, number labelled CONTRADICTED:
+NLI 16, LoRA v1 10, **LoRA v2 16**, Gemini verifier 9, router v1 10, **router v2 17**. All 63
+perturbed test pairs: NLI 61, LoRA v1 46, LoRA v2 59, Gemini 49, router v1 48, router v2 61.
+
+**Real agent claims (the 80 `run` pairs, whose labels v2 did not change)**: LoRA v1 65/80,
+**LoRA v2 56/80**, paired -0.113 [-0.188, -0.038], **p = 0.012**; NOT_ENOUGH_INFO run claims
+called SUPPORTED: v1 11 of 21, v2 16 of 21. Router on run pairs: v1 0.813, v2 0.750 (-0.063
+[-0.138, +0.013], p = 0.18), Gemini 0.838. Other kinds (v2 reference, v1 -> v2): direction
+8 -> 14 of 15, number 6 -> 9 of 9, swap 11 -> 14 of 15, negation 21 -> 22 of 24, cross 15 -> 16 of 19,
+positive 87 -> 86 of 90.
+
+**Router threshold on val (v2 reference)**: v2 adapter alone 0.927 (v1 0.884, Gemini alone
+0.876). v2 curve: 0.6 -> 2.6% escalated, 0.940; 0.7 -> 4.3%, 0.944; **0.75 -> 5.6%, 0.953**;
+0.8 -> 6.0%, 0.953; 0.85 -> 6.9%, 0.953; 0.9 -> 10.7%, 0.944. 0.75 is still the knee (the
+cheapest threshold at the plateau), at $0.012 per 1k claims. Val is only 233 pairs and is
+scored against the same constructed labels the adapter learned, so it overstates v2.
+
+**Decision: v1 stays the default adapter.** The v2 gain is concentrated on synthetic edits
+produced by the same rules that defined its training labels, while it is significantly worse
+on real agent claims, which is the distribution the verifier serves; NOT_ENOUGH_INFO F1 drops
+from 0.70 to 0.57. v2 remains selectable with `VERIFIER_ADAPTER_DIR=models/verifier-lora-v2`.
+Limits: one training run per adapter, on different GPUs (T4 vs L4), so run-to-run variance is
+unmeasured; the paired tests are across test pairs, not training runs. Next: keep the
+construction labels but add `run`-kind NOT_ENOUGH_INFO hard negatives (section 2), train two
+seeds per variant, and select on a val split that includes run pairs.
