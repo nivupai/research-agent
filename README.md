@@ -95,10 +95,11 @@ Gemini free tier (nothing was billed).
 
 | experiment | result | report |
 |---|---|---|
-| Hybrid + rerank vs embeddings-only retrieval (8 queries, 299 pooled papers; **relevance graded by Claude, not humans**) | recall@10 0.440 [0.359, 0.529] vs 0.422 [0.319, 0.547], paired +0.018 [-0.025, +0.060], p = 0.50: no measurable difference; nDCG@10 0.753 vs 0.785; the reranker adds ~220 ms per query. Human spot-check of 50 of these grades pending (`make label-spotcheck`) | [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
+| Hybrid + rerank vs embeddings-only retrieval (8 queries, 299 pooled papers; **relevance graded by Claude, not humans**, criterion "would this abstract help answer the query") | recall@10 0.358 [0.304, 0.420] vs 0.355 [0.299, 0.421], paired +0.003 [-0.026, +0.036], p = 1.0: no measurable difference; nDCG@10 0.756 vs 0.815; the reranker adds ~220 ms per query. Claude test-retest kappa 0.69 [0.52, 0.85] on 50 items; human validation pending | [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Claim verification on vs off | off: groundedness 57.0% [42.5, 71.4] (about 43% of checkable claims unsupported); on: every failed claim removed or marked `[unverified]` (18-38% of draft claims failed in 3 live runs) | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
-| Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794] | [verifier_week7.md](eval/reports/verifier_week7.md) |
+| Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794]. Caveat: the teacher labels 28% of synthetic contradiction pairs SUPPORTED, so this reference favours teacher-like models | [verifier_week7.md](eval/reports/verifier_week7.md) |
 | Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; re-scoring the same 50 smoke answers, the router judged more claims supported than the NLI verifier (groundedness 0.570 -> 0.677, +0.107 [+0.007, +0.197], p = 0.031); the answers did not change, so this measures the verifier, not answer quality | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Label agreement, **inter-model (Claude vs Gemini), not human validation** | verifier: Claude vs Gemini teacher kappa 0.63 [0.44, 0.81] (n = 50; all 11 disagreements are teacher SUPPORTED, and the teacher labels 28% of synthetic contradiction pairs SUPPORTED); judge: Claude vs Gemini judge kappa 0.84 [0.57, 1.00] (n = 36 graded answers). Human spot-check (`make label-spotcheck`, ~1.5 h) pending | [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Prompt-injection defences on vs off (attack success rate) | **pending**: needs maintainer-written `eval/questions/injection.jsonl`, then `make eval-injection` | [security_week9.md](eval/reports/security_week9.md) |
 | Semantic cache on vs off (50 requests, replay at 0.1x recorded time) | p95 9.47 s -> 6.01 s, p50 1.22 s -> 42 ms, 68% hits, hit p95 57 ms (single run, no CI) | [serving_week8.md](eval/reports/serving_week8.md) |
 | Worker autoscaling (kind + KEDA, 10 replay jobs) | 1 -> 4 workers in 16 s, all jobs done in 75 s (one worker: ~200 s), back to 1 at 92 s | [serving_week8.md](eval/reports/serving_week8.md) |
@@ -116,7 +117,9 @@ Gemini free tier (nothing was billed).
 > [PENDING]%, retrieval recall@10 [PENDING].
 
 (Retrieval has a Claude-graded result but no human-checked one yet, and it shows no
-hybrid-vs-dense difference, so it stays out of the line until the spot-check is done.)
+hybrid-vs-dense difference, so it stays out of the line until the spot-check is done. No
+number in this README has been validated against human labels yet; the agreement figures are
+between models.)
 
 More: [failure cases and what they taught](docs/failure_cases.md) ·
 [3-minute demo script](docs/demo_script.md).

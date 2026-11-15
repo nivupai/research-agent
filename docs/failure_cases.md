@@ -114,6 +114,20 @@ Open issues are marked **open**.
 * **Fix**: inference-time LLM labels use their own cache namespace (`2c131a7`).
 * **Lesson**: when a model is both the reference and a contestant, check the caches.
 
+### 16. The teacher labels some plain contradictions as SUPPORTED (**open**)
+* **Symptom**: labelling the verifier spot-check independently, Claude disagreed with the
+  Gemini teacher on 11 of 50 pairs, every time with the teacher saying SUPPORTED; four were
+  synthetic contradictions such as "Exercise decreased cardiac AMPKalpha2 activity" against a
+  passage saying it increased.
+* **Root cause**: teacher leniency. Across the dataset the teacher labels 28% of synthetic
+  contradiction pairs (negation, number change, role swap) SUPPORTED; DeBERTa NLI calls 16 of
+  the 18 such test pairs CONTRADICTED.
+* **Status**: not fixed. The verifier comparison is scored against this reference, and the
+  LoRA was trained on it. Relabel, retrain and re-score after a human spot-check
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Lesson**: a model-generated reference needs an independent check before it is used as
+  ground truth; a second rater found in an hour what accuracy numbers hid.
+
 ## Evaluation
 
 ### 11. PubMedQA accuracy 50% (**open**)

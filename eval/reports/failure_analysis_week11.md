@@ -6,6 +6,9 @@ Reproduce with the scripts named in each section.
 
 ## 1. Retrieval: hybrid + rerank vs embeddings-only (Claude-graded relevance)
 
+(Rubric v1 numbers. Section 6 re-grades the sample under the owner's criterion "would this
+abstract help answer the query"; the conclusion is the same.)
+
 **Who labelled what**: relevance (0/1/2) for the 299 pooled items of an 8-query sample
 (`make label-sample`: whole queries, stratified by query type) was graded by Claude, reading
 each query and abstract, rubric v1 (2 = directly addresses the query's specific mechanism or
@@ -166,3 +169,62 @@ So sorafenib is a long-tail case on both routes. Candidate fixes and the runs to
 
 Then `make label-agreement`. Expected precision with these sizes: verifier accuracy +/-0.10,
 judge kappa about +/-0.22 (`make label-plan`).
+
+## 6. Claude as an independent second rater (inter-model agreement, not human validation)
+
+At the project owner's request Claude labelled the spot-check items itself, blind to the
+Gemini labels, reading each item. Claude's labels live in separate files
+(`labeler: "claude"`): `eval/labels/verifier_test_claude.jsonl`,
+`eval/labels/judge_calibration_claude.jsonl`, `eval/labels/spotcheck_retrieval_claude_v2.jsonl`,
+`eval/labels/retrieval_claude_v2.jsonl`. No human label field was written. **Everything in
+this section is agreement between two models; none of it is human validation**, which is
+still pending (`make label-spotcheck`). `bioagent label agreement` reproduces the numbers.
+
+| comparison | n | exact agreement | Cohen's kappa [95% CI] |
+|---|---|---|---|
+| verifier: Claude vs Gemini teacher | 50 | 0.78 | 0.63 [0.44, 0.81] |
+| judge (answer scale): Claude vs Gemini judge | 36 | 0.94 | 0.84 [0.57, 1.00]; quadratic-weighted 0.89 [0.61, 1.00] |
+| judge (abstain / false premise, yes/no): Claude vs Gemini judge | 4 | 4/4 | not informative (all "yes") |
+| retrieval: Claude rubric v1 vs blind re-grade under "would it help answer the query" | 50 | 0.80 | 0.69 [0.52, 0.85]; quadratic-weighted 0.82 [0.68, 0.91] (self-consistency) |
+
+**Judge**: the two disagreements are both Claude "partially" vs judge "correct" (an answer
+that omits the direction of the survival effect, and one that reports a different error
+figure than the key fact). The judge looks reliable but slightly lenient; 40 items cannot
+show more than that.
+
+**Verifier**: all 11 disagreements are teacher SUPPORTED vs Claude NOT_ENOUGH_INFO (7) or
+CONTRADICTED (4). Four are synthetic contradiction pairs where the passage plainly says the
+opposite ("Exercise decreased cardiac AMPKalpha2 activity" vs "increased"; a "6.4-compartment"
+vs "16-compartment" model; "a significant difference also was not found" vs "was found";
+"binds the CBS pockets of glucose complex" vs "of AMPK complex"); DeBERTa NLI calls all four
+CONTRADICTED. Checked across the whole dataset: the teacher labels **28% of synthetic
+contradiction pairs SUPPORTED** (train 171 of 623, val 18 of 59, test 18 of 63). On the 18
+such test pairs NLI says CONTRADICTED for 16; the LoRA, trained on these labels, copies the
+teacher on 7. Some synthetic edits may fail to change the meaning, but the four read here
+did. Consequences: (a) the Week 7 verifier comparison is scored against a reference that is
+lenient in a known direction, which favours teacher-like models (the LoRA, Gemini itself) over
+NLI; (b) the training data teaches the LoRA to accept some contradictions. Proposed: relabel
+synthetic pairs where the teacher says SUPPORTED but the edit is a negation, number change or
+role swap (with NLI as a check and the human spot-check to measure the result), retrain, and
+re-score every verifier. Not done here (it changes the headline numbers and needs the owner's
+OK).
+
+**Retrieval re-grade**: under the owner's criterion ("would this abstract help answer the
+query": 2 = directly answers or key evidence, 1 = partially useful background, 0 = not
+useful) the blind re-grade agreed with rubric v1 on 40 of 50; 7 of the 10 changes were
+0 -> 1 (background that would still help), so the criterion is more lenient. The full
+299-item sample was re-graded under it (`eval/labels/retrieval_claude_v2.jsonl`: the 50 blind
+re-grades plus the other 249; 35 items 0 -> 1, 2 items 2 -> 1, 1 item 1 -> 2). Re-run of
+`scripts/eval_retrieval.py --labels claude` (v2; 8 queries):
+
+| mode | recall@10 v1 | recall@10 v2 | nDCG@10 v1 | nDCG@10 v2 | precision@10 v2 |
+|---|---|---|---|---|---|
+| BM25 | 0.374 | 0.339 [0.284, 0.407] | 0.625 | 0.651 [0.524, 0.782] | 0.800 |
+| dense | 0.422 | 0.355 [0.299, 0.421] | 0.785 | 0.815 [0.713, 0.891] | 0.838 |
+| hybrid | 0.371 | 0.344 [0.288, 0.412] | 0.706 | 0.746 [0.647, 0.838] | 0.825 |
+| hybrid + rerank | 0.440 | 0.358 [0.304, 0.420] | 0.753 | 0.756 [0.645, 0.858] | 0.838 |
+
+Hybrid + rerank vs dense under v2: recall@10 +0.003 [-0.026, +0.036], p = 1.0; nDCG@10
+-0.059 [-0.176, +0.074], p = 0.45. Recall drops for every mode because more papers count as
+relevant (best achievable recall@10 0.452, was 0.576). The conclusion does not change: no
+measurable difference between hybrid + rerank and embeddings-only on these 8 queries.
