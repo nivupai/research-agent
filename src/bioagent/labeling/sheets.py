@@ -171,17 +171,23 @@ class Sheet:
     """One label file plus the order items are presented in.
 
     ``focus`` (optional) is a set of group ids (retrieval: query ids) to label first; the
-    progress target is then those groups, and the rest follow after them.
+    progress target is then those groups, and the rest follow after them. ``only`` (optional)
+    restricts the sheet to those row keys (a spot-check subset); other rows are kept in the
+    file untouched but never shown or counted.
     """
 
     spec: SheetSpec
     path: Path
     focus: frozenset[str] = frozenset()
+    only: frozenset[str] | None = None
     seed: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     def rows(self) -> list[Row]:
-        return read_jsonl(self.path)
+        rows = read_jsonl(self.path)
+        if self.only is None:
+            return rows
+        return [r for r in rows if self.spec.key(r) in self.only]
 
     def order(self, rows: Sequence[Row]) -> list[str]:
         """Keys in presentation order: focus groups first, whole groups together.
@@ -250,7 +256,9 @@ class Sheet:
     def set_label(self, key: str, value: Label | None) -> dict[str, Any]:
         """Set (or clear, with None) one row's label and save the file atomically."""
         with self._lock:
-            rows = self.rows()
+            rows = read_jsonl(self.path)  # every row: the file is rewritten whole
+            if self.only is not None and key not in self.only:
+                raise KeyError(key)
             row = next((r for r in rows if self.spec.key(r) == key), None)
             if row is None:
                 raise KeyError(key)
@@ -262,7 +270,7 @@ class Sheet:
                 value = matched[0]
             row[self.spec.label_field] = value if value is not None else _blank(self.spec)
             write_jsonl_atomic(self.path, rows)
-            return self.progress(rows)
+            return self.progress()
 
 
 def _blank(spec: SheetSpec) -> Any:

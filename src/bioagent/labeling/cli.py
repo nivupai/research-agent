@@ -25,6 +25,11 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     srv.add_argument("--sheets", default="retrieval,verifier,judge", help="comma-separated")
     srv.add_argument("--port", type=int, default=8765)
     srv.add_argument(
+        "--spotcheck",
+        action="store_true",
+        help="serve only the spot-check items (see `label spotcheck`)",
+    )
+    srv.add_argument(
         "--sample",
         type=Path,
         nargs="?",
@@ -43,6 +48,13 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     pln = lsub.add_parser("plan", help="how many labels each pending metric needs")
     pln.add_argument("--json", action="store_true")
 
+    spc = lsub.add_parser("spotcheck", help="(re)build the human spot-check selection")
+    spc.add_argument("--retrieval", type=int, default=50)
+    spc.add_argument("--verifier", type=int, default=50)
+    spc.add_argument("--seed", type=int, default=0)
+
+    lsub.add_parser("agreement", help="human vs Claude / teacher agreement on the spot-check")
+
 
 def main(args: argparse.Namespace) -> int:
     if args.label_command == "sample":
@@ -51,6 +63,22 @@ def main(args: argparse.Namespace) -> int:
         save_sample(args.out, qids, seed=args.seed, rows=rows)
         items = sum(1 for r in rows if str(r["query_id"]) in set(qids))
         print(f"wrote {args.out}: {len(qids)} queries, {items} items to grade: {', '.join(qids)}")
+        return 0
+    if args.label_command == "spotcheck":
+        from bioagent.labeling.spotcheck import build, estimate_minutes
+
+        sel = build(args.retrieval, args.verifier, args.seed)
+        minutes = estimate_minutes(sel)
+        print(
+            f"spot-check: {len(sel['retrieval'])} retrieval, {len(sel['verifier'])} verifier, "
+            f"{len(sel['judge'])} judge items; about {minutes['total']:.0f} min "
+            f"({minutes['retrieval']:.0f} + {minutes['verifier']:.0f} + {minutes['judge']:.0f})"
+        )
+        return 0
+    if args.label_command == "agreement":
+        from bioagent.labeling.spotcheck import agreement
+
+        print(json.dumps(agreement(), indent=2))
         return 0
     if args.label_command == "plan":
         p = plan(*(read_jsonl(SPECS[n].default_path) for n in ("retrieval", "verifier", "judge")))
@@ -66,6 +94,20 @@ def main(args: argparse.Namespace) -> int:
     if unknown:
         raise SystemExit(f"unknown sheet(s) {unknown}; choose from {list(SPECS)}")
     sheets: dict[str, Sheet] = {}
+    if args.spotcheck:
+        from bioagent.labeling import spotcheck as sc
+
+        if not sc.SELECTION.exists():
+            raise SystemExit("no spot-check selection: run `bioagent label spotcheck` first")
+        sel = json.loads(sc.SELECTION.read_text())
+        sheets = {
+            "retrieval": Sheet(SPECS["retrieval"], sc.RETRIEVAL_SPOTCHECK),
+            "verifier": Sheet(
+                SPECS["verifier"], sc.VERIFIER_SHEET, only=frozenset(sel["verifier"])
+            ),
+            "judge": Sheet(SPECS["judge"], sc.JUDGE_SHEET, only=frozenset(sel["judge"])),
+        }
+        names = []
     for name in names:
         path: Path = getattr(args, f"{name}_file")
         if not path.exists():

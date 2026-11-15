@@ -178,3 +178,40 @@ def test_api_round_trip(tmp_path: Path) -> None:
 def test_api_refuses_non_loopback_clients(tmp_path: Path) -> None:
     client = _client(tmp_path, host="192.168.1.20")
     assert client.get("/api/sheets").status_code == 403
+
+
+def test_only_restricts_the_sheet_but_keeps_other_rows(tmp_path: Path) -> None:
+    path = _verifier(tmp_path)
+    sheet = Sheet(SPECS["verifier"], path, only=frozenset({"v1"}))
+    assert [r["id"] for r in sheet.rows()] == ["v1"]
+    assert sheet.progress()["total"] == 1
+    with pytest.raises(KeyError):
+        sheet.set_label("v0", "SUPPORTED")
+    sheet.set_label("v1", "CONTRADICTED")
+    rows = read_jsonl(path)
+    assert [r["id"] for r in rows] == ["v0", "v1", "v2"]
+    assert [r["human_label"] for r in rows] == ["", "CONTRADICTED", ""]
+    assert sheet.next_key() is None
+
+
+def test_proportional_sample() -> None:
+    from bioagent.labeling.spotcheck import proportional_sample
+
+    rows = [{"g": "a", "k": f"a{i}"} for i in range(30)] + [
+        {"g": "b", "k": f"b{i}"} for i in range(10)
+    ]
+    keys = proportional_sample(rows, "g", 8, "k", seed=1)
+    assert len(keys) == 8 and sum(k.startswith("a") for k in keys) == 6
+    assert keys == proportional_sample(rows, "g", 8, "k", seed=1)
+    assert len(proportional_sample(rows, "g", 100, "k")) == 40
+
+
+def test_kappa_summary() -> None:
+    from bioagent.eval.stats import bootstrap_kappa
+    from bioagent.labeling.spotcheck import _kappa
+
+    pairs = [("2", "2"), ("1", "1"), ("0", "0"), ("0", "1"), ("2", "2"), ("0", "0")]
+    res = _kappa(pairs, ["0", "1", "2"], bootstrap_kappa, True)
+    assert res["n"] == 6 and res["exact_agreement"] == pytest.approx(0.833, abs=1e-3)
+    assert res["weighted_kappa_quadratic"]["mean"] > res["kappa"]["mean"] > 0
+    assert _kappa([], ["0"], bootstrap_kappa, False)["n"] == 0
