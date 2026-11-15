@@ -24,7 +24,8 @@ autoscaling:
   keda:
     listLength: "2"
     pollingInterval: 5
-    cooldownPeriod: 30
+    cooldownPeriod: 30         # only used with minReplicas: 0
+    scaleDownStabilizationSeconds: 60
 persistence:
   enabled: true
   hostPath: /bioagent-data

@@ -11,11 +11,20 @@ spec:
   minReplicaCount: {{ .Values.autoscaling.minReplicas }}
   maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
   pollingInterval: {{ .Values.autoscaling.keda.pollingInterval }}
+  {{- if eq (int .Values.autoscaling.minReplicas) 0 }}
   cooldownPeriod: {{ .Values.autoscaling.keda.cooldownPeriod }}
+  {{- end }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # with minReplicas >= 1 the HPA's window (not cooldownPeriod) paces scale-down
+          stabilizationWindowSeconds: {{ .Values.autoscaling.keda.scaleDownStabilizationSeconds }}
   triggers:
     - type: redis
       metadata:
-        address: {{ printf "%s-redis:6379" (include "bioagent.fullname" .) | quote }}
+        # fully qualified: the KEDA operator resolves it from its own namespace
+        address: {{ printf "%s-redis.%s.svc.cluster.local:6379" (include "bioagent.fullname" .) .Release.Namespace | quote }}
         listName: "bioagent:queue"
         listLength: {{ .Values.autoscaling.keda.listLength | quote }}
         databaseIndex: "0"

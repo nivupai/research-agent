@@ -61,7 +61,8 @@ autoscaling:
   keda:
     listLength: "2"          # target ready jobs per worker
     pollingInterval: 5
-    cooldownPeriod: 30
+    cooldownPeriod: 30         # only used with minReplicas: 0
+    scaleDownStabilizationSeconds: 60
   hpa:
     targetCPUUtilizationPercentage: 70
 
