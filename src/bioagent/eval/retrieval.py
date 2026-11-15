@@ -137,3 +137,40 @@ def markdown_table(results: dict[str, dict[str, Any]], k: int = 10) -> str:
         m = data["metrics"]
         lines.append(f"| {mode} | " + " | ".join(str(m[c]) for c in cols) + " |")
     return "\n".join(lines)
+
+
+def recall_ceiling(qrels: Qrels, k: int) -> float:
+    """Best achievable mean recall@k: queries with more than k relevant PMIDs cap below 1."""
+    caps = []
+    for qid in qrels.queries:
+        n_rel = sum(1 for g in qrels.judged(qid).values() if g >= RELEVANT_MIN_GRADE)
+        if n_rel:
+            caps.append(min(k, n_rel) / n_rel)
+    return statistics.fmean(caps) if caps else 0.0
+
+
+def query_ci(per_query: dict[str, dict[str, float]], metric: str) -> dict[str, float]:
+    """Mean of a per-query metric with a bootstrap 95% CI over queries."""
+    from bioagent.eval.stats import paired_bootstrap
+
+    values = [q[metric] for q in per_query.values()]
+    lo, hi = paired_bootstrap(values)
+    return {"mean": round(statistics.fmean(values), 4), "lo": round(lo, 4), "hi": round(hi, 4)}
+
+
+def compare_modes(
+    results: dict[str, dict[str, Any]], baseline: str, candidate: str, metric: str
+) -> dict[str, float]:
+    """Paired per-query difference (candidate - baseline): bootstrap CI and sign-flip p."""
+    from bioagent.eval.stats import paired_bootstrap, permutation_test
+
+    base, cand = results[baseline]["per_query"], results[candidate]["per_query"]
+    diffs = [cand[q][metric] - base[q][metric] for q in base if q in cand]
+    lo, hi = paired_bootstrap(diffs)
+    return {
+        "delta": round(statistics.fmean(diffs), 4),
+        "lo": round(lo, 4),
+        "hi": round(hi, 4),
+        "p": round(permutation_test(diffs), 4),
+        "queries": len(diffs),
+    }
