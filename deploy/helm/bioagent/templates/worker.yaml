@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "bioagent.fullname" . }}-worker
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  {{- if eq .Values.autoscaling.mode "none" }}
+  replicas: {{ .Values.worker.replicas }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "bioagent.selector" (dict "root" . "component" "worker") | nindent 6 }}
+  template:
+    metadata:
+      labels: {{- include "bioagent.selector" (dict "root" . "component" "worker") | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Finish the current job before exiting on scale-down (the worker stops on SIGTERM).
+      terminationGracePeriodSeconds: 120
+      containers:
+        - name: worker
+          image: {{ include "bioagent.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["bioagent", "worker"]
+          ports:
+            - {name: metrics, containerPort: {{ .Values.worker.metricsPort }}}
+          {{- include "bioagent.env" . | nindent 10 }}
+          {{- include "bioagent.volumeMounts" . | nindent 10 }}
+          livenessProbe:
+            httpGet: {path: /metrics, port: metrics}
+            initialDelaySeconds: 15
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /metrics, port: metrics}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources: {{- toYaml .Values.worker.resources | nindent 12 }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+      {{- include "bioagent.volumes" . | nindent 6 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "bioagent.fullname" . }}-worker-metrics
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+spec:
+  selector: {{- include "bioagent.selector" (dict "root" . "component" "worker") | nindent 4 }}
+  ports:
+    - {name: metrics, port: {{ .Values.worker.metricsPort }}, targetPort: metrics}

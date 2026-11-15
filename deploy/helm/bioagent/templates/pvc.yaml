@@ -1,0 +1,17 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) (not .Values.persistence.hostPath) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "bioagent.fullname" . }}-data
+  labels: {{- include "bioagent.labels" . | nindent 4 }}
+spec:
+  # ReadWriteMany is needed when api and worker pods run on different nodes; single-node
+  # clusters (kind) work with ReadWriteOnce.
+  accessModes: ["ReadWriteOnce"]
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+{{- end }}

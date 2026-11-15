@@ -90,6 +90,8 @@ class Settings(BaseSettings):
     worker_concurrency: int = 1
     worker_metrics_port: int = 9101
     otlp_endpoint: str | None = None  # e.g. http://localhost:4318 (Jaeger all-in-one)
+    worker_pipeline: Literal["agent", "replay"] = "agent"  # replay: fixed answers, no LLM
+    replay_seconds: float = 5.0
 
     # Prompt-injection defences and audit log (see bioagent.security)
     security_defenses: bool = True  # SECURITY_DEFENSES=off for the comparison runs

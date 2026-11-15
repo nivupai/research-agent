@@ -30,3 +30,49 @@ At real (1x) speed the miss path is ~10x longer (cache off: p50 ~12 s, p95
 
 Pending (needs Gemini quota, exhausted until 08:00 UTC): one live end-to-end run through
 the API and worker with real LLM calls, to measure real p50/p95 and per-query cost.
+
+## Kubernetes: kind deploy and KEDA worker autoscaling (2026-11-15)
+
+Verified on a real single-node kind cluster (kind v0.33, KEDA from `kedacore/keda`) on this
+Mac, with `make k8s-up k8s-deploy` and the slim image (`bioagent:slim`, 1.4 GB, no torch)
+loaded into the node. Values: `deploy/kind/values-kind.yaml` (replay pipeline,
+`replaySeconds: 20`, worker concurrency 1, KEDA `listLength: 2`, 1-4 workers, 60 s
+scale-down stabilisation). No LLM calls were made.
+
+* All pods Ready: api, worker, redis (the worker restarted once at install while Redis was
+  still starting). `/healthz` ok, `/readyz` ready with the queue depth.
+* One `POST /v1/ask` via `kubectl port-forward`: completed in 21 s (20 s replay), SSE stream
+  `queued -> running -> progress x4 -> final`, summary with 0 LLM calls and $0.
+* Chart bug found and fixed: the KEDA Redis trigger used the short service name, which the
+  KEDA operator resolves in its own namespace (`no such host`); it now uses
+  `<svc>.<namespace>.svc.cluster.local`. KEDA also warned that `cooldownPeriod` only applies
+  with `minReplicas: 0`, so scale-down is now paced by an explicit HPA stabilisation window
+  (`autoscaling.keda.scaleDownStabilizationSeconds`, default 60).
+
+Burst of 10 replay jobs (the API's per-client burst limit), sampled every ~5 s:
+
+| t (s) | desired workers | ready workers | jobs waiting | jobs done |
+|---|---|---|---|---|
+| 0 | 1 | 1 | 9 | 0 |
+| 6 | 1 | 1 | 9 | 0 |
+| 11 | 1 | 1 | 9 | 0 |
+| 16 | 4 | 1 | 6 | 0 |
+| 22 | 4 | 1 | 5 | 1 |
+| 27 | 4 | 4 | 5 | 1 |
+| 32 | 4 | 4 | 5 | 1 |
+| 38 | 4 | 4 | 2 | 4 |
+| 43 | 4 | 4 | 1 | 5 |
+| 49 | 4 | 4 | 1 | 5 |
+| 54 | 4 | 4 | 1 | 5 |
+| 59 | 4 | 4 | 0 | 8 |
+| 65 | 4 | 4 | 0 | 9 |
+| 70 | 4 | 4 | 0 | 9 |
+| 75 | 3 | 3 | 0 | 10 |
+| 81 | 3 | 3 | 0 | 10 |
+| 86 | 3 | 3 | 0 | 10 |
+| 92 | 1 | 1 | 0 | 10 |
+
+KEDA scaled the workers 1 -> 4 within 16 s of the burst (all 4 Ready at 27 s); the queue was
+drained at 59 s and all 10 jobs were done at 75 s (one worker would need ~200 s); after the
+60 s stabilisation window the deployment scaled 4 -> 3 -> 1 by 92 s. The cluster was then
+removed with `make k8s-down`.

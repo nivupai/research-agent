@@ -328,3 +328,14 @@ async def test_execute_streams_progress_events(tmp_path: Path) -> None:
     assert state["answer"].startswith("Metformin")
     assert json.dumps(events)  # JSON-friendly
     await asyncio.sleep(0)
+
+
+async def test_replay_pipeline_runs_through_the_worker(redis: FakeAsyncRedis) -> None:
+    from bioagent.serve.replay import replay_pipeline
+
+    q = JobQueue(redis)
+    job_id = await q.create("Which drugs act on AMPK?", options={}, trace_context={}, client="c")
+    assert await Worker(q, replay_pipeline(0.0)).run_one(job_id) == "completed"
+    job = await q.get(job_id) or {}
+    assert job["result"]["answer"].startswith("[replay pipeline]")
+    assert job["summary"]["llm_calls"] == 0 and job["summary"]["cost_usd"] == 0.0

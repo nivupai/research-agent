@@ -354,6 +354,70 @@ curl -N localhost:8000/v1/jobs/<job_id>/events    # SSE progress, then the final
   adapters and the Hugging Face cache are mounted, not copied. The sandbox MCP server needs
   Docker, which the worker container does not have, so `run_python` is unavailable there.
 
+## Kubernetes (Helm chart + kind)
+
+```bash
+make k8s-up          # kind cluster (deploy/kind/kind-config.yaml) + KEDA
+make k8s-load-image  # docker build --build-arg UV_EXTRAS= -t bioagent:slim . ; kind load
+make k8s-deploy      # helm upgrade --install bioagent deploy/helm/bioagent -f deploy/kind/values-kind.yaml
+kubectl port-forward svc/bioagent-bioagent-api 8000:8000
+make k8s-down
+make k8s-lint        # helm lint + helm template | kubeconform (no cluster; also in CI)
+```
+
+The chart (`deploy/helm/bioagent`) deploys the API (Deployment + Service, probes on
+`/healthz` and `/readyz`), the worker (Deployment, metrics probe, 120 s graceful termination),
+a self-contained Redis StatefulSet (or `redis.externalUrl`), optional Jaeger
+(`jaeger.enabled`) and an external Neo4j (`neo4j.uri`). Non-secret settings go into a
+ConfigMap from `config:`; pods run non-root with read-only root filesystems and dropped
+capabilities; one data volume (PVC, existing claim, or `hostPath` on kind) holds the corpus,
+indexes, checkpoints and audit logs.
+
+* **Secrets** are never in values files in the repo. Create them in the cluster:
+  `kubectl create secret generic bioagent-secrets --from-literal=GEMINI_API_KEY=... --from-literal=NEO4J_PASSWORD=...`
+  (or, for throwaway clusters only, `secrets.create: true` with values from a file you keep
+  outside the repo).
+* **Autoscaling** (`autoscaling.mode`): `keda` (default) scales workers on the Redis ready-queue
+  length with a KEDA ScaledObject (`bioagent:queue`, target `listLength` jobs per worker);
+  `hpa` uses CPU (metrics-server); `none` keeps `worker.replicas`. KEDA is the simplest
+  option that scales on the actual backlog and runs on kind.
+* The kind values use the slim image and `worker.pipeline: replay` (fixed answers after
+  `replaySeconds`, no LLM calls) so the stack and its autoscaling can be exercised without
+  API quota. For the real agent build the full image (`docker build -t bioagent:latest .`,
+  several GB with torch), set `image.tag=latest`, `worker.pipeline=agent`, and mount a data
+  volume containing the corpus and indexes.
+
+## Security: prompt-injection defences and audit log (`bioagent.security`)
+
+Retrieved text (abstracts, KG records, PubChem data, tool and code output) is treated as
+untrusted. With `SECURITY_DEFENSES=on` (default):
+
+* **Spotlighting**: every tool result and evidence passage is wrapped as data with its
+  provenance (source, tool, PMID/passage) between per-run random delimiters
+  (`<<<UNTRUSTED_DATA-<mark>` ... `<<<END_UNTRUSTED_DATA-<mark>>>`); delimiter look-alikes are
+  neutralised and control, zero-width and bidi characters stripped. All system prompts say
+  that block contents are data only.
+* **Tool policy**: per-role allowlists; `run_python` only for the analysis specialist and
+  without network or subprocess use; PMIDs and graph edge ids in arguments must come from the
+  question, the task or results already retrieved; URLs only from the question; arguments
+  copied verbatim from retrieved text are denied. Denials go back to the specialist as tool
+  errors and are audited.
+* **Output checks**: PMIDs in the answer that were never retrieved become
+  `[unverified PMID]`; instruction-like sentences repeated from retrieved text are flagged.
+* **Audit log**: an append-only, hash-chained JSONL per run under `AUDIT_DIR` (optionally
+  mirrored to SQLite with `AUDIT_SQLITE=true`): question hash, plan, every tool call (role,
+  tool, args hash and redacted args, allowed/denied, reason), every LLM call (model, tokens,
+  cost), verifier decisions, output flags and the final answer hash, each with the job id and
+  trace id. No question/answer text and no secrets are stored.
+  `bioagent audit verify <run or job id>` checks the chain (tampering is detected);
+  `bioagent audit show <id>` prints it.
+
+`SECURITY_DEFENSES=off` turns off the policy, output checks and random delimiters for
+comparisons. `make eval-injection` runs the maintainer-written prompt-injection items
+(`eval/questions/injection.jsonl`; none are shipped) with defences on and off and reports the
+attack success rate with paired CIs. Threat model and details:
+`eval/reports/security_week9.md`.
+
 ## Development
 
 ```bash
