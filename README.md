@@ -103,7 +103,7 @@ Gemini free tier (nothing was billed).
 | Prompt-injection defences on vs off (attack success rate) | **pending**: needs maintainer-written `eval/questions/injection.jsonl`, then `make eval-injection` | [security_week9.md](eval/reports/security_week9.md) |
 | Semantic cache on vs off (50 requests, replay at 0.1x recorded time) | p95 9.47 s -> 6.01 s, p50 1.22 s -> 42 ms, 68% hits, hit p95 57 ms (single run, no CI) | [serving_week8.md](eval/reports/serving_week8.md) |
 | Worker autoscaling (kind + KEDA, 10 replay jobs) | 1 -> 4 workers in 16 s, all jobs done in 75 s (one worker: ~200 s), back to 1 at 92 s | [serving_week8.md](eval/reports/serving_week8.md) |
-| Smoke eval (25 questions x 2, flash-lite) | accuracy 80.0% [64.0, 94.0], flip rate 8%; PubMedQA 50.0% [22.2, 77.8] | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Smoke eval (25 questions x 2, flash-lite) | accuracy 80.0% [64.0, 94.0], flip rate 8%; PubMedQA 50.0% [22.2, 77.8]; held-out PubMedQA (30 items): 56.7% [40.0, 73.3], gold "no" 5 of 12, a yes bias that a flash synthesizer and a results-first prompt did not fix (n.s.) | [eval_and_verification.md](eval/reports/eval_and_verification.md), [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Full eval, **partial** (65 of 188: computed + corpus only) | accuracy 91.5% [85.4, 96.9], citation support 81.2% [75.0, 87.1], groundedness 77.4% [70.5, 84.0], 19.9 s and $0.0099 per question | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
 
 **Draft resume line** (measured numbers; placeholders where results are pending):

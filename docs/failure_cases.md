@@ -58,7 +58,9 @@ Open issues are marked **open**.
   TZDs, salicylates and aspirin came back; sorafenib still ranks too low to be retrieved.
   Offline follow-up: the direct paper ranks 25th (the agent keeps 15; BM25 alone has it 7th,
   the reranker demotes it), and the graph edge rests on one paper, so `min_evidence=2` drops
-  it ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+  it ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)). Fusing the
+  reranker order with BM25 (`RERANK_FUSION=true`) lifts the paper to rank 8 offline; the live
+  test is still pending, and the setting is off by default.
 * **Lesson**: do not rely on a small model to follow a multi-step search recipe; run the
   recipe in code and give the model the union.
 
@@ -146,10 +148,11 @@ Open issues are marked **open**.
   predictors?" while the cited results showed 40% local failure with negative margins and
   P = ns. (An earlier version of this entry guessed "answers from many papers"; the records
   show otherwise.)
-* **Status**: open. Runs prepared for after the quota reset: finish the 100 PubMedQA items
-  (flash-lite baseline), then `--suite pubmedqa --synth gemini:gemini-3.5-flash` and a
-  results-first prompt variant
-  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Status**: open. On 30 held-out items the bias reproduces (56.7% [40.0, 73.3]; gold
+  "no" 5 of 12 right, 19 "yes" answers for 12 gold "yes"). A flash synthesizer and a
+  results-first prompt rule were tried; neither changed accuracy (both +0.000 on the shared
+  items, which were only 19 and 24 because the free quota ran out), so neither was adopted
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md), section 9).
 * **Lesson**: check the hypothesis against the records before writing it down; per-category
   breakdowns matter, the headline number hid a weak category.
 

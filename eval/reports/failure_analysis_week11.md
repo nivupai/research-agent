@@ -314,3 +314,62 @@ Limits: one training run per adapter, on different GPUs (T4 vs L4), so run-to-ru
 unmeasured; the paired tests are across test pairs, not training runs. Next: keep the
 construction labels but add `run`-kind NOT_ENOUGH_INFO hard negatives (section 2), train two
 seeds per variant, and select on a val split that includes run pairs.
+
+## 9. Post-reset runs (2026-11-15): PubMedQA variants, sorafenib fixes
+
+**Quota**: the free tier ran out after 73 agent questions (about 490 LLM calls) today:
+flash-lite stopped near 500 requests and flash much earlier, so the planned runs only
+partly completed. Nothing below was adopted; all defaults are unchanged.
+
+### PubMedQA yes-bias (held-out set)
+
+`eval/suites.yaml: pubmedqa-ab`: 30 PubMedQA items not in the smoke suite (12 gold yes, 12 no,
+6 maybe; seed 20261115), flash-lite in every role, 1 repeat. Variants:
+`--synth gemini:gemini-3.5-flash` and `--synth-variant results_first` (a synthesizer rule:
+find the decisive result, answer Yes/No from it even against the question's framing, Maybe
+only for mixed results, start with the label; opt-in, `SYNTH_VARIANT=results_first`).
+
+| run | items done | accuracy [95% CI] | gold yes | gold no | gold maybe | answers "yes" |
+|---|---|---|---|---|---|---|
+| baseline (flash-lite) | 30/30 | 56.7% [40.0, 73.3] | 11/12 | 5/12 | 1/6 | 19 of 30 |
+| flash synthesizer | 19/30 (flash quota) | 47.4% | 6/6 | 3/9 | 0/4 | 10 of 19 |
+| results-first prompt | 24/30 (flash-lite quota) | 50.0% | 8/9 | 4/9 | 0/6 | 15 of 24 (+2 with no label) |
+
+Paired against the baseline on the same items (`bioagent eval compare`): flash synthesizer
++0.000 [-0.158, +0.158], p = 1.0 (n = 19); results-first +0.000 [-0.167, +0.167], p = 1.0
+(n = 24). On those items the gold-"no" score moved from 2 to 3 of 9 (flash) and 2 to 4 of 9
+(results-first), while gold-"maybe" went from 1 to 0. Groundedness: flash +0.121
+[+0.008, +0.229], p = 0.055; results-first -0.064, n.s.
+
+Reading: the yes bias reproduces on held-out items (19 "yes" answers for 12 gold "yes"
+items; gold "no" 5 of 12 right). Neither change is significantly better, so neither is
+adopted. The results-first rule also made 2 answers lose their label. Resume both variant
+runs after the next reset (`bioagent eval run --suite pubmedqa-ab --resume pqa-ab-flash`,
+`... --resume pqa-ab-rf`); 30 items x 1 repeat can only detect large effects (CI half-width
+about 0.16), so a decision needs the full 100 PubMedQA items or repeats.
+
+### Sorafenib fixes (offline only; live runs not reached)
+
+Three general fixes are now settings, defaults unchanged: `DISCOVERY_K` (corpus hits kept per
+discovery search, default 15), `DISCOVERY_MIN_EVIDENCE` (graph evidence floor, default 2) and
+`RERANK_FUSION` (hybrid_rerank fuses the reranker order with the BM25 order by RRF instead
+of using the reranker alone).
+
+* `RERANK_FUSION=true`: the sorafenib paper (28625738) moves from rank 25 to **rank 8** for
+  "AMPK inhibitor approved drug", inside the 15 kept; the two "activator" queries still miss
+  it. General retrieval on the Claude-graded sample (8 queries, not human labels): hybrid +
+  rerank with fusion recall@10 0.347 [0.299, 0.410], nDCG@10 0.725 [0.608, 0.833], vs 0.358
+  and 0.756 without fusion (small and within noise, but not an improvement).
+* `DISCOVERY_K=25`: the paper sits exactly at rank 25 for one query, so k = 25 includes it by a
+  margin of one; fragile.
+* `DISCOVERY_MIN_EVIDENCE=1`: does not help on its own; sorafenib would rank 47th of 74 approved
+  drugs with literature edges, past the drugs_targeting limit of 20.
+
+Prepared live comparison (needs about 100 calls; not run): the AMPK question with baseline,
+`DISCOVERY_K=25`, `RERANK_FUSION=true`, and both; plus mTOR/glioblastoma and PI3K/breast cancer
+questions with and without fusion as an overfitting check.
+
+### Full eval
+
+Not resumed: `full-v1` is still at 65 of 188 (computed and corpus done; false premise,
+PubMedQA and unanswerable remain). `make eval-full RESUME=full-v1` after the next reset.
