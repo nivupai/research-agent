@@ -260,3 +260,13 @@ async def test_search_corpus_tool(retriever: Retriever) -> None:
         assert "search_corpus" in {t.name for t in await server.mcp.list_tools()}
     finally:
         server.set_retriever(None)
+
+
+def test_rerank_fusion_keeps_bm25_signal(retriever: Retriever) -> None:
+    query = "metformin AMPK glioblastoma"
+    plain = retriever.search(query, k=5, mode="hybrid_rerank")
+    retriever.rerank_fusion = True
+    fused = retriever.search(query, k=5, mode="hybrid_rerank")
+    assert {h.passage_id for h in fused.hits} == {h.passage_id for h in plain.hits}
+    top = fused.hits[0].stages
+    assert top.bm25_rank == 1 or top.rerank_rank == 1  # a leader of either list stays on top

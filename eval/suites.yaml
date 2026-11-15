@@ -33,6 +33,39 @@ full:
 pubmedqa:
   description: the 100 PubMedQA yes/no/maybe items (category subset of full)
   ids: category:pubmedqa
+pubmedqa-ab:
+  description: 30 held-out PubMedQA items (12 yes, 12 no, 6 maybe; seed 20261115; no smoke items) for the yes-bias comparison
+  ids:
+  - pubmedqa-11838307
+  - pubmedqa-11867487
+  - pubmedqa-11955750
+  - pubmedqa-12006913
+  - pubmedqa-12040336
+  - pubmedqa-12095973
+  - pubmedqa-12098035
+  - pubmedqa-12630042
+  - pubmedqa-14631523
+  - pubmedqa-15708048
+  - pubmedqa-15918864
+  - pubmedqa-16046584
+  - pubmedqa-18847643
+  - pubmedqa-19103915
+  - pubmedqa-19401574
+  - pubmedqa-19468282
+  - pubmedqa-20602101
+  - pubmedqa-21845457
+  - pubmedqa-22521460
+  - pubmedqa-22990761
+  - pubmedqa-23360491
+  - pubmedqa-23791827
+  - pubmedqa-24995509
+  - pubmedqa-25499207
+  - pubmedqa-25752912
+  - pubmedqa-26113007
+  - pubmedqa-26460153
+  - pubmedqa-26907557
+  - pubmedqa-27456836
+  - pubmedqa-8200238
 injection:
   description: user-provided prompt-injection items (eval/questions/injection.jsonl)
   ids: category:injection

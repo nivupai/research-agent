@@ -402,3 +402,27 @@ def test_synth_override_changes_the_agent_hash() -> None:
     assert base.agent_hash() != flash.agent_hash()
     local = EvalConfig.for_provider("smoke", "ollama", settings, synth="ollama:other")
     assert local.synth == "ollama:other" and local.planner.startswith("ollama:")
+
+
+def test_synth_variant_hash_is_backward_compatible() -> None:
+    from bioagent.config import Settings
+    from bioagent.eval.runner import EvalConfig
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    base = EvalConfig.for_provider("pubmedqa", "gemini", settings)
+    old = {k: v for k, v in base.__dict__.items() if k != "synth_variant"}
+    assert EvalConfig(**old).agent_hash() == base.agent_hash()  # manifests without the field
+    variant = EvalConfig.for_provider("pubmedqa", "gemini", settings, synth_variant="results_first")
+    assert variant.agent_hash() != base.agent_hash()
+
+
+def test_synthesizer_prompt_variants() -> None:
+    import pytest
+
+    from bioagent.agents import prompts
+
+    assert prompts.synthesizer_prompt() == prompts.SYNTHESIZER
+    rf = prompts.synthesizer_prompt("results_first")
+    assert rf.startswith(prompts.SYNTHESIZER) and "decisive result" in rf
+    with pytest.raises(ValueError):
+        prompts.synthesizer_prompt("other")

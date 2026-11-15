@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     planner_model: str | None = None
     specialist_model: str | None = None
     synth_model: str | None = None
+    synth_variant: str = "default"  # synthesizer prompt variant: default | results_first
+    # Drug discovery (repurposing tasks): corpus hits kept per search, graph evidence floor.
+    discovery_k: int = 15
+    discovery_min_evidence: int = 2
+    # hybrid_rerank: fuse the reranker order with the BM25 order (RRF) instead of rerank only
+    rerank_fusion: bool = False
     # Per-specialist overrides of SPECIALIST_MODEL, e.g. LITERATURE_MODEL=gemini:gemini-3.5-flash
     literature_model: str | None = None
     chemistry_model: str | None = None

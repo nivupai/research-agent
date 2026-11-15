@@ -20,7 +20,17 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     esub = ev.add_subparsers(dest="eval_command", required=True)
 
     run = esub.add_parser("run", help="run (or resume) a suite; results/eval/<suite>/<run_id>")
-    run.add_argument("--suite", choices=["smoke", "full", "pubmedqa", "injection"], default="smoke")
+    run.add_argument(
+        "--suite",
+        choices=["smoke", "full", "pubmedqa", "pubmedqa-ab", "injection"],
+        default="smoke",
+    )
+    run.add_argument(
+        "--synth-variant",
+        choices=["default", "results_first"],
+        default="default",
+        help="synthesizer prompt variant (results_first: yes/no rule)",
+    )
     run.add_argument(
         "--synth",
         metavar="PROVIDER:MODEL",
@@ -89,6 +99,7 @@ def main(args: argparse.Namespace) -> int:
             graph=args.graph,
             defenses=args.defenses == "on",
             **({"synth": args.synth} if args.synth else {}),
+            **({"synth_variant": args.synth_variant} if args.synth_variant != "default" else {}),
         )
         if args.suite == "injection" and not (ROOT / INJECTION_FILE).exists():
             print(

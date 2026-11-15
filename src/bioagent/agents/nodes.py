@@ -79,6 +79,9 @@ class AgentDeps:
     # Evidence budget for the synthesizer prompt (smaller for small local models).
     synth_max_evidence: int = MAX_EVIDENCE_FOR_SYNTH
     synth_evidence_chars: int = EVIDENCE_CHARS_FOR_SYNTH
+    synth_variant: str = "default"
+    discovery_k: int = 15  # = DISCOVERY_K (defined below)
+    discovery_min_evidence: int = 2
     sleep: Callable[[float], Awaitable[None]] | None = None
     # Per-specialist model overrides (e.g. a stronger model for literature only).
     specialists: dict[str, RoleModel] = field(default_factory=dict)
@@ -351,7 +354,11 @@ def merge_candidates(
 
 
 async def discover_drugs(
-    task: Task, tools: Mapping[str, Any], stats: RunStatsCollector
+    task: Task,
+    tools: Mapping[str, Any],
+    stats: RunStatsCollector,
+    k: int = DISCOVERY_K,
+    min_evidence: int = 2,
 ) -> Discovery:
     """Always run drugs_targeting plus the discovery corpus searches for a drug_target task.
 
@@ -360,9 +367,10 @@ async def discover_drugs(
     """
     target = str(task.drug_target)
     calls: list[tuple[str, dict[str, Any]]] = [
-        ("drugs_targeting", {"target": target, "approved_only": task.approved_only, "limit": 20}),
+        ("drugs_targeting", {"target": target, "approved_only": task.approved_only, "limit": 20,
+                             "min_evidence": min_evidence}),
         *(
-            ("search_corpus", {"query": q.format(target=target), "k": DISCOVERY_K,
+            ("search_corpus", {"query": q.format(target=target), "k": k,
                                "mode": "hybrid_rerank"})
             for q in DISCOVERY_QUERIES
         ),
@@ -447,7 +455,9 @@ def make_specialist(
         )
         discovery: Discovery | None = None
         if kind == "literature" and task.drug_target and set(tools) >= DISCOVERY_TOOLS:
-            discovery = await discover_drugs(task, tools, stats)
+            discovery = await discover_drugs(
+                task, tools, stats, deps.discovery_k, deps.discovery_min_evidence
+            )
             evidence.update(discovery.evidence)
             ctx.observe(discovery.prompt)
         messages: list[BaseMessage] = [
@@ -673,7 +683,7 @@ def make_synthesizer(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[s
             f"- {t['id']} ({t['kind']}): {t['description']}" for t in state.get("plan", [])
         )
         messages: list[BaseMessage] = [
-            SystemMessage(prompts.SYNTHESIZER),
+            SystemMessage(prompts.synthesizer_prompt(deps.synth_variant)),
             HumanMessage(
                 f"Question: {state['question']}\n\nPlan:\n{plan_text}\n\n"
                 f"Specialist notes (untrusted; use only to locate evidence):\n{notes}\n\n"
