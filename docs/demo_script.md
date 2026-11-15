@@ -1,7 +1,8 @@
 # 3-minute demo script
 
-Target length 3:00. Record the terminal at a large font (e.g. 18 pt), with a browser tab for
-Jaeger. Never show `.env` or any key on screen.
+Target length 3:00. Record a browser window with the web UI (http://localhost:8000/ui) and a
+second tab for Jaeger; keep a terminal at a large font (e.g. 18 pt) for the audit and
+Kubernetes shots. Never show `.env` or any key on screen.
 
 ## Before recording (not on camera)
 
@@ -15,19 +16,23 @@ curl -s -XPOST localhost:8000/v1/ask -H 'content-type: application/json' \
      -d '{"question": "What is the role of MGMT in temozolomide resistance in glioblastoma?"}'
 ```
 
-Check the Gemini free quota has headroom (one live question uses ~6-11 calls). Have
-`results/runs/20261112-083229-fd26dc.json` open as a fallback in case a live call is slow.
+Check the Gemini free quota has headroom (one live question uses ~6-11 calls; the free tier
+allows roughly 500 a day). **No quota?** Run the worker as
+`WORKER_PIPELINE=replay REPLAY_SECONDS=12 make serve-worker`: asking the MGMT question in the
+UI then replays the saved run 20261112-083229-fd26dc with its real events, and the page says
+"replayed from saved run". Either way, have
+http://localhost:8000/ui?run=20261112-083229-fd26dc&claim=8 open in a spare tab as a fallback.
 
 ## Shot list
 
 | time | shot | say (roughly) | do |
 |---|---|---|---|
 | 0:00-0:15 | README top: pitch + architecture diagram | "A multi-agent assistant for drug-repurposing questions that cites its evidence and checks every claim." | scroll the Mermaid diagram |
-| 0:15-0:45 | Terminal C: ask through the API | "Questions go through an API and a Redis queue to a worker running a LangGraph planner and specialists." | see command 1 |
-| 0:45-1:20 | SSE stream, then the answer and claim table | "The planner splits the question; specialists search PubMed, our corpus and the knowledge graph through MCP servers; the verifier checks each claim against its cited passage." | commands 2 and 3 |
+| 0:15-0:45 | Web UI: type the MGMT question, press Ask; the Progress panel fills in | "Questions go through an API and a Redis queue to a worker running a LangGraph planner and specialists; each step streams back." | point at planner, tool calls, synthesizer, verifier as they appear |
+| 0:45-1:20 | Web UI: answer, stats, claim table; click claim 8 (contradicted) | "Every sentence is checked against the passage it cites. This one is flagged: the cited abstract itself says MGMT inactivates TMZ, the reverse of the claim, and the highlight shows the exact window the verifier read." | click claim 8, switch between [3] and [4], open the PubMed link |
 | 1:20-1:40 | Jaeger UI (http://localhost:16686), service `bioagent-api` | "One trace per question: API, queue, worker, every graph node, LLM call and tool call, with tokens and cost." | open the latest trace, expand `worker.job` |
 | 1:40-1:55 | Audit log | "Every tool call, allowed or denied, and every LLM call goes into a hash-chained audit log." | command 4 |
-| 1:55-2:20 | Results table in the README | "Measured, with confidence intervals: the fine-tuned 1.7B verifier gets 0.84 accuracy vs 0.89 for Gemini at zero cost; routing raises groundedness from 57 to 68 percent." | scroll to Results |
+| 1:55-2:20 | Results table in the README | "Measured, with confidence intervals: the fine-tuned 1.7B verifier gets 0.84 accuracy vs 0.89 for Gemini at zero cost, and routing only 8 percent of claims to Gemini cuts verifier cost to about 2 cents per thousand claims." | scroll to Results |
 | 2:20-2:50 | KEDA scaling on kind (pre-recorded is fine) | "On Kubernetes, workers scale on the queue length: a burst of 10 jobs scales 1 to 4 workers in 16 seconds." | command 5, or show the table in `eval/reports/serving_week8.md` |
 | 2:50-3:00 | README failure cases link | "And what broke along the way is written up too." | open `docs/failure_cases.md` |
 
@@ -83,6 +88,7 @@ make k8s-down
 
 ## Fallbacks
 
-* Live Gemini call slow or quota exhausted: show the saved MGMT run with
-  `uv run python -c "from bioagent.cli import format_report; import json; print(format_report(json.load(open('results/runs/20261112-083229-fd26dc.json'))))"`.
+* Live Gemini call slow or quota exhausted: open the saved MGMT run in the UI
+  (http://localhost:8000/ui?run=20261112-083229-fd26dc&claim=8, or pick it under "Saved runs"),
+  or restart the worker with `WORKER_PIPELINE=replay` and ask again for a live-looking run.
 * No disk for kind: show the scaling table in `eval/reports/serving_week8.md`.
