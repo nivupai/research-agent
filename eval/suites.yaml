@@ -30,6 +30,9 @@ smoke:
 full:
   description: every item
   ids: all
+pubmedqa:
+  description: the 100 PubMedQA yes/no/maybe items (category subset of full)
+  ids: category:pubmedqa
 injection:
   description: user-provided prompt-injection items (eval/questions/injection.jsonl)
   ids: category:injection

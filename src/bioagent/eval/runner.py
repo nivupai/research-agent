@@ -71,7 +71,7 @@ class EvalConfig:
                 provider=provider,
                 planner=spec,
                 specialist=spec,
-                synth=spec,
+                synth=kw.pop("synth", spec),
                 judge=spec,
                 **kw,
             )

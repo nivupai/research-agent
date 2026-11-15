@@ -389,3 +389,16 @@ def test_runner_reuses_only_matching_ok_results(tmp_path: Path) -> None:
     assert not _done(path, it, 1, "h1")  # other repeat
     path.write_text(json.dumps({**ok, "status": "error"}))
     assert not _done(path, it, 0, "h1")  # errors are retried on resume
+
+
+def test_synth_override_changes_the_agent_hash() -> None:
+    from bioagent.config import Settings
+    from bioagent.eval.runner import EvalConfig
+
+    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    base = EvalConfig.for_provider("pubmedqa", "gemini", settings)
+    flash = EvalConfig.for_provider("pubmedqa", "gemini", settings, synth="gemini:gemini-3.5-flash")
+    assert flash.synth == "gemini:gemini-3.5-flash" and base.planner == flash.planner
+    assert base.agent_hash() != flash.agent_hash()
+    local = EvalConfig.for_provider("smoke", "ollama", settings, synth="ollama:other")
+    assert local.synth == "ollama:other" and local.planner.startswith("ollama:")

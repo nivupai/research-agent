@@ -20,7 +20,12 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
     esub = ev.add_subparsers(dest="eval_command", required=True)
 
     run = esub.add_parser("run", help="run (or resume) a suite; results/eval/<suite>/<run_id>")
-    run.add_argument("--suite", choices=["smoke", "full", "injection"], default="smoke")
+    run.add_argument("--suite", choices=["smoke", "full", "pubmedqa", "injection"], default="smoke")
+    run.add_argument(
+        "--synth",
+        metavar="PROVIDER:MODEL",
+        help="synthesizer model for this run (default: flash-lite, like every other role)",
+    )
     run.add_argument("--repeats", type=int, default=1)
     run.add_argument("--provider", choices=["gemini", "ollama"], default="gemini")
     run.add_argument("--resume", metavar="RUN_ID")
@@ -83,6 +88,7 @@ def main(args: argparse.Namespace) -> int:
             nli=args.nli,
             graph=args.graph,
             defenses=args.defenses == "on",
+            **({"synth": args.synth} if args.synth else {}),
         )
         if args.suite == "injection" and not (ROOT / INJECTION_FILE).exists():
             print(
