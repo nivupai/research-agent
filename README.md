@@ -1,7 +1,121 @@
 # BioResearch Agent
 
-A research assistant for biomedical literature, built on a free stack (Gemini free tier /
-local Ollama models, NCBI E-utilities, Europe PMC) and exposed through MCP servers.
+A multi-agent research assistant for drug-repurposing questions (AMPK, glioblastoma,
+temozolomide/MGMT, BBB delivery, mTOR/PI3K) that answers with **cited, claim-verified**
+evidence. A LangGraph planner splits the question into tasks for literature, chemistry and
+analysis specialists, which work through five MCP servers (PubMed/Europe PMC, an 11.5k-abstract
+hybrid-search corpus, RDKit/PubChem, a Docker sandbox and a Neo4j knowledge graph built from
+PubTator3 and ChEMBL). A synthesizer writes the answer, and a verifier checks every atomic claim
+against its cited passage (local NLI, a fine-tuned small model, or Gemini behind a confidence
+router), removing or flagging what is not supported. It runs on a free stack (Gemini free tier
+or local Ollama, open models, local Neo4j/Redis/Jaeger), is served as an async API with a
+semantic cache, queue workers autoscaled by KEDA, OpenTelemetry tracing, prompt-injection
+defences and a hash-chained audit log, and is measured by a repeated-run evaluation suite with
+confidence intervals.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    U[Client] -->|POST /v1/ask| API[FastAPI API<br/>rate limit + API key]
+    API -->|semantic cache hit| U
+    API -->|enqueue| Q[(Redis queue<br/>+ event streams)]
+    Q --> W[Worker<br/>KEDA-scaled]
+    W --> P[LangGraph planner]
+    P --> L[Literature specialist]
+    P --> C[Chemistry specialist]
+    P --> A[Analysis specialist]
+    subgraph MCP[MCP servers]
+        ML[literature<br/>PubMed / Europe PMC]
+        MR[retrieval<br/>BM25 + dense + rerank]
+        MG[graph<br/>Neo4j KG]
+        MC[chemistry<br/>RDKit / PubChem]
+        MS[sandbox<br/>Docker Python]
+    end
+    L --> ML & MR & MG
+    C --> MC
+    A --> MS
+    L & C & A --> S[Synthesizer<br/>numbered citations]
+    S --> V{Verifier router}
+    V -->|confident| SL[Small LoRA verifier<br/>Qwen3-1.7B]
+    V -->|low confidence| G[Gemini]
+    V --> R[Answer + claim table<br/>SSE / GET /v1/jobs]
+    R --> U
+    SEC[[Security: spotlighting,<br/>tool policy, output checks]] -.-> L & C & A & S
+    AUD[(Audit log<br/>hash-chained JSONL)] -.-> W
+    OT[OpenTelemetry -> Jaeger<br/>Prometheus metrics] -.-> API & W
+```
+
+## Quickstart
+
+```bash
+make install                      # uv sync --extra models + pre-commit hooks
+cp .env.example .env              # add GEMINI_API_KEY (free tier); never commit .env
+make ingest index                 # PubMed corpus + BM25/dense indexes (~5 min)
+make graph-up kg-build            # optional: Neo4j knowledge graph (PubTator3 + ChEMBL)
+make ask Q="What is the role of MGMT in temozolomide resistance in glioblastoma?"
+make serve-deps serve-api         # API on :8000 (Redis + Jaeger in containers) ...
+make serve-worker                 # ... and a worker in another terminal
+make eval-smoke                   # 25 questions x 2 repeats with CIs
+make k8s-up k8s-load-image k8s-deploy   # kind + KEDA demo (replay pipeline, no LLM calls)
+```
+
+## Example answer (real run, verification on)
+
+From run `20261112-083229-fd26dc` (`bioagent ask "What is the role of MGMT in temozolomide
+resistance in glioblastoma?"`, Gemini free tier, 195 s, $0.011 list price). Excerpt:
+
+> O6-methylguanine-DNA methyltransferase (MGMT) is a direct DNA repair protein that serves as
+> a primary determinant of resistance to the alkylating chemotherapeutic agent temozolomide
+> (TMZ) in glioblastoma (GBM) [1, 2, 3, 4, 5].
+> ... MGMT counteracts TMZ toxicity by directly transferring the O6-methyl group from guanine
+> onto a cysteine residue in its own active site, restoring normal guanine while undergoing
+> irreversible suicide inactivation [3, 4] [unverified]. ...
+
+Claim table (selected rows, claim text shortened; 33 claims in total, groundedness 0.82):
+
+| # | label | claim | cited | check |
+|---|---|---|---|---|
+| 1 | supported | MGMT is a direct DNA repair protein. | 1-5 | NLI entailment 0.97 vs [4] |
+| 2 | supported | MGMT serves as a primary determinant of resistance to TMZ in GBM. | 1-5 | NLI entailment 1.00 vs [5] |
+| 4 | supported | TMZ exerts its cytotoxic effect primarily by introducing O6-methylguanine adducts. | 3, 5, 6, 7 | NLI entailment 0.98 vs [7] |
+| 6 | not_supported | MGMT transfers the O6-methyl group onto a cysteine in its active site. | 3, 4 | max entailment 0.01 |
+| 8 | contradicted | MGMT undergoes irreversible suicide inactivation. | 3, 4 | NLI contradiction 1.00 vs [4] |
+| 11 | supported | High MGMT protein levels cause TMZ resistance. | 1, 3, 8 | NLI entailment 0.86 vs [1] |
+
+References are PubMed records (e.g. [1] PMID 33433610, [3] PMID 24157870). Claim 8 is a known
+false contradiction (see `docs/failure_cases.md`): the verifier is strict, so correct
+textbook facts the cited abstracts do not state get flagged.
+
+## Results
+
+Measured numbers only; each row links to its report. Costs are list-price equivalents on the
+Gemini free tier (nothing was billed).
+
+| experiment | result | report |
+|---|---|---|
+| Hybrid + rerank vs embeddings-only retrieval (recall@10) | **pending**: needs relevance grades in `data/labels/pool.jsonl` (0 of 1,929 graded), then `make eval-retrieval` | [README: Retrieval evaluation](#retrieval-evaluation) |
+| Claim verification on vs off | off: groundedness 57.0% [42.5, 71.4] (about 43% of checkable claims unsupported); on: every failed claim removed or marked `[unverified]` (18-38% of draft claims failed in 3 live runs) | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794] | [verifier_week7.md](eval/reports/verifier_week7.md) |
+| Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; on the smoke answers groundedness 0.570 -> 0.677 (+0.107 [+0.007, +0.197], p = 0.031) vs the NLI verifier | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Prompt-injection defences on vs off (attack success rate) | **pending**: needs maintainer-written `eval/questions/injection.jsonl`, then `make eval-injection` | [security_week9.md](eval/reports/security_week9.md) |
+| Semantic cache on vs off (50 requests, replay at 0.1x recorded time) | p95 9.47 s -> 6.01 s, p50 1.22 s -> 42 ms, 68% hits, hit p95 57 ms (single run, no CI) | [serving_week8.md](eval/reports/serving_week8.md) |
+| Worker autoscaling (kind + KEDA, 10 replay jobs) | 1 -> 4 workers in 16 s, all jobs done in 75 s (one worker: ~200 s), back to 1 at 92 s | [serving_week8.md](eval/reports/serving_week8.md) |
+| Smoke eval (25 questions x 2, flash-lite) | accuracy 80.0% [64.0, 94.0], flip rate 8%; PubMedQA 50.0% [22.2, 77.8] | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Full eval, **partial** (65 of 188: computed + corpus only) | accuracy 91.5% [85.4, 96.9], citation support 81.2% [75.0, 87.1], groundedness 77.4% [70.5, 84.0], 19.9 s and $0.0099 per question | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+
+**Draft resume line** (measured numbers; placeholders where results are pending):
+
+> Built a free-stack multi-agent biomedical research assistant (LangGraph, 5 MCP servers, Neo4j
+> knowledge graph) with claim-level verification: a LoRA-fine-tuned Qwen3-1.7B verifier reaches
+> 0.837 accuracy vs 0.885 for Gemini at $0 per claim, and a confidence router cuts verifier cost
+> to $0.017 per 1k claims while raising answer groundedness from 57% to 68% (p = 0.031); served
+> through FastAPI/Redis with KEDA autoscaling (1 -> 4 workers in 16 s), a semantic cache (p50
+> 1.2 s -> 42 ms on repeats) and OpenTelemetry tracing; prompt-injection attack success
+> [PENDING]%, retrieval recall@10 [PENDING].
+
+More: [failure cases and what they taught](docs/failure_cases.md) ·
+[3-minute demo script](docs/demo_script.md).
 
 ## Setup
 
