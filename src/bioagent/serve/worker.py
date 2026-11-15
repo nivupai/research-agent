@@ -30,19 +30,68 @@ Pipeline = Callable[[Mapping[str, Any], EventSink], Awaitable[dict[str, Any]]]
 TRANSIENT = (TimeoutError, ConnectionError, asyncio.TimeoutError)
 
 
+PASSAGE_CHARS = 4000
+EVIDENCE_FIELDS = (
+    "cite",
+    "ref",
+    "source",
+    "entailment",
+    "contradiction",
+    "window",
+    "contradiction_window",
+)
+
+
+def claim_status(claim: Mapping[str, Any], removed_sentences: set[int]) -> str:
+    """One status for the claim table: removed (its sentence was dropped from the answer),
+    otherwise the verifier label (supported, computed, contradicted, not_supported, absence)."""
+    if claim.get("sentence") in removed_sentences and claim.get("label") in (
+        "contradicted",
+        "not_supported",
+    ):
+        return "removed"
+    return str(claim.get("label") or "unchecked")
+
+
 def slim_result(record: Mapping[str, Any]) -> dict[str, Any]:
-    """What a client needs: answer, references, claim table, plan and run stats."""
+    """What a client needs: answer, references, claim table with its evidence windows, the
+    cited passages (for highlighting the evidence), plan and run stats."""
     verification = record.get("verification", {}) or {}
+    removed = {int(s) for s in verification.get("removed_sentences", []) or []}
     claims = [
-        {k: c.get(k) for k in ("n", "claim", "label", "check", "citations")}
+        {
+            **{k: c.get(k) for k in ("n", "claim", "label", "check", "citations", "sentence")},
+            "status": claim_status(c, removed),
+            "evidence": [
+                {k: e.get(k) for k in EVIDENCE_FIELDS} for e in c.get("evidence", []) or []
+            ],
+        }
         for c in verification.get("claims", []) or []
     ]
+    cited = record.get("cited_evidence", {}) or {}
+    passages = {}
+    for cit in record.get("citations", []) or []:
+        evidence = cited.get(cit.get("key")) or {}
+        if evidence.get("text"):
+            passages[str(cit["n"])] = {
+                "text": str(evidence["text"])[:PASSAGE_CHARS],
+                "pmid": cit.get("pmid"),
+                "title": cit.get("title"),
+                "url": cit.get("url"),
+                "source": cit.get("source"),
+            }
     return {
         "run_id": record.get("run_id"),
+        "replayed_from": record.get("replayed_from"),
+        "question": record.get("question"),
+        "started_at": record.get("started_at"),
         "answer": record.get("answer", ""),
         "citations": record.get("citations", []),
         "claims": claims,
+        "passages": passages,
         "groundedness": verification.get("groundedness"),
+        "removed_sentences": sorted(removed),
+        "flagged_sentences": verification.get("flagged_sentences", []) or [],
         "plan": record.get("plan", []),
         "models": record.get("models", {}),
         "stats": record.get("stats", {}),

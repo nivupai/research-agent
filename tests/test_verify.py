@@ -174,6 +174,8 @@ async def test_computed_mismatch_and_contradiction() -> None:
     assert labels[0] == ("not_supported", "numbers not in the tool output: 120.4")
     assert labels[1][0] == "contradicted"
     assert out["report"]["groundedness"] == 0.0
+    ev = out["report"]["claims"][1]["evidence"][0]
+    assert ev["contradiction_window"] and ev["contradiction"] > 0.5  # the window behind the label
 
 
 async def test_llm_claim_split_absence_and_uncited() -> None:

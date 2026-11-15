@@ -339,3 +339,122 @@ async def test_replay_pipeline_runs_through_the_worker(redis: FakeAsyncRedis) ->
     job = await q.get(job_id) or {}
     assert job["result"]["answer"].startswith("[replay pipeline]")
     assert job["summary"]["llm_calls"] == 0 and job["summary"]["cost_usd"] == 0.0
+
+
+# --- UI support: result payload, saved runs, replay of saved runs, /ui --------------------------
+
+
+def ui_record(run_id: str = "20261112-083229-fd26dc", question: str = "Does X work?") -> Any:
+    rec = record("X works [1]. X is safe [2].")
+    url = "https://pubmed.ncbi.nlm.nih.gov/11/"
+    rec |= {
+        "run_id": run_id,
+        "question": question,
+        "started_at": "2026-11-12T08:32:29+00:00",
+        "citations": [
+            {"n": 1, "key": "11:0", "pmid": "11", "title": "T1", "url": url},
+            {"n": 2, "key": "22:0", "pmid": "22", "title": "T2", "url": None},
+        ],
+        "cited_evidence": {
+            "11:0": {"text": "X works well. More text."},
+            "22:0": {"text": "X is toxic."},
+        },
+        "tool_calls": [{"task_id": "t1", "tool": "search_corpus", "ok": True, "latency_ms": 5}],
+    }
+    supported = {
+        "n": 1,
+        "claim": "X works.",
+        "label": "supported",
+        "check": "NLI 0.9",
+        "citations": [1],
+        "sentence": 1,
+        "evidence": [{"cite": 1, "entailment": 0.9, "contradiction": 0.0, "window": "X works."}],
+    }
+    contradicted = {
+        "n": 2,
+        "claim": "X is safe.",
+        "label": "contradicted",
+        "check": "NLI contradiction 0.99",
+        "citations": [2],
+        "sentence": 2,
+        "evidence": [
+            {
+                "cite": 2,
+                "entailment": 0.0,
+                "contradiction": 0.99,
+                "window": "X is toxic.",
+                "contradiction_window": "X is toxic.",
+            }
+        ],
+    }
+    rec["verification"] = {
+        "groundedness": 0.5,
+        "removed_sentences": [2],
+        "flagged_sentences": [],
+        "claims": [supported, contradicted],
+    }
+    return rec
+
+
+def test_slim_result_carries_status_evidence_and_passages() -> None:
+    from bioagent.serve.worker import slim_result
+
+    out = slim_result(ui_record())
+    assert [c["status"] for c in out["claims"]] == ["supported", "removed"]
+    assert out["claims"][1]["evidence"][0]["contradiction_window"] == "X is toxic."
+    assert out["passages"]["1"]["text"] == "X works well. More text."
+    assert out["passages"]["1"]["url"].endswith("/11/")
+    assert out["removed_sentences"] == [2] and out["question"] == "Does X work?"
+
+
+def test_saved_runs_listing_loading_and_path_safety(tmp_path: Path) -> None:
+    from bioagent.serve.runs import find_by_question, list_runs, load_run
+
+    (tmp_path / "20261112-083229-fd26dc.json").write_text(json.dumps(ui_record()))
+    unverified = ui_record("20261113-000000-aaaaaa") | {"verification": {}}
+    (tmp_path / "20261113-000000-aaaaaa.json").write_text(json.dumps(unverified))
+    (tmp_path / "notes.json").write_text("{}")
+    runs = list_runs(tmp_path)
+    assert [r["run_id"] for r in runs] == ["20261113-000000-aaaaaa", "20261112-083229-fd26dc"]
+    assert runs[1]["claims"] == 2 and runs[1]["groundedness"] == 0.5
+    run = load_run(tmp_path, "20261112-083229-fd26dc") or {}
+    assert run["summary"]["groundedness"] == 0.5 and len(run["result"]["claims"]) == 2
+    assert load_run(tmp_path, "../secrets") is None and load_run(tmp_path, "notes") is None
+    # the newer run has no claim table, so the verified one is preferred
+    found = find_by_question(tmp_path, "  does x WORK ")
+    assert found is not None and found["run_id"] == "20261112-083229-fd26dc"
+    assert find_by_question(tmp_path, "something else") is None
+
+
+async def test_api_saved_runs_and_ui(redis: FakeAsyncRedis, tmp_path: Path) -> None:
+    (tmp_path / "20261112-083229-fd26dc.json").write_text(json.dumps(ui_record()))
+    app = create_app(settings(runs_dir=tmp_path, api_key=SecretStr("k1")), redis=redis, cache=None)
+    async with await client_for(app) as c:
+        page = await c.get("/ui")
+        assert page.status_code == 200 and "BioResearch Agent" in page.text
+        assert "X-API-Key" in page.text and "k1" not in page.text  # no secret in the page
+        assert (await c.get("/v1/runs")).status_code == 401
+        h = {"X-API-Key": "k1"}
+        listing = (await c.get("/v1/runs", headers=h)).json()["runs"]
+        assert listing[0]["run_id"] == "20261112-083229-fd26dc"
+        run = (await c.get("/v1/runs/20261112-083229-fd26dc", headers=h)).json()
+        assert run["result"]["passages"]["2"]["text"] == "X is toxic."
+        assert (await c.get("/v1/runs/..%2F..%2Fetc", headers=h)).status_code == 404
+        assert (await c.get("/", follow_redirects=False)).headers["location"] == "/ui"
+
+
+async def test_replay_pipeline_replays_a_saved_run(redis: FakeAsyncRedis, tmp_path: Path) -> None:
+    from bioagent.serve.replay import replay_events, replay_pipeline
+
+    rec = ui_record()
+    (tmp_path / "20261112-083229-fd26dc.json").write_text(json.dumps(rec))
+    nodes = [e["node"] for e in replay_events(rec)]
+    assert nodes == ["planner", "literature", "synthesizer", "verifier"]
+    q = JobQueue(redis)
+    job_id = await q.create("does x work", options={}, trace_context={}, client="c")
+    assert await Worker(q, replay_pipeline(0.0, tmp_path)).run_one(job_id) == "completed"
+    job = await q.get(job_id) or {}
+    assert job["result"]["replayed_from"] == "20261112-083229-fd26dc"
+    assert job["result"]["claims"][1]["status"] == "removed"
+    events = [e async for e in q.events(job_id, block_ms=10) if e is not None]
+    assert [e.get("tool") for e in events if e.get("tool")] == ["search_corpus"]
