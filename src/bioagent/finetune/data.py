@@ -316,3 +316,27 @@ def write_pairs(path: Path, pairs: Iterable[Pair]) -> None:
 
 def read_pairs(path: Path) -> list[Pair]:
     return [Pair(**json.loads(line)) for line in path.read_text().splitlines() if line.strip()]
+
+
+# --- reference v2: constructed contradictions labelled by construction ----------------------
+CONSTRUCTED_KINDS: tuple[str, ...] = ("direction", "negation", "number", "swap")
+
+
+def target_label(pair: Pair) -> str | None:
+    """The label to train and score against: ``labels.target`` (v2) or the teacher's (v1)."""
+    label = pair.labels.get("target") or pair.labels.get("teacher")
+    return str(label) if label else None
+
+
+def relabel_by_construction(pair: Pair, kinds: Sequence[str] = CONSTRUCTED_KINDS) -> Pair:
+    """A copy with ``labels.target`` set: CONTRADICTED for rule-perturbed pairs of ``kinds``
+    (the edited sentence comes from the passage itself, so the edit contradicts it), else the
+    teacher label. ``labels.teacher`` is kept unchanged and ``labels.label_source`` records
+    which one ``target`` came from."""
+    labels = dict(pair.labels)
+    teacher = labels.get("teacher")
+    if pair.kind in kinds:
+        labels["target"], labels["label_source"] = "CONTRADICTED", "construction"
+    elif teacher:
+        labels["target"], labels["label_source"] = teacher, "teacher"
+    return Pair(**{**asdict(pair), "labels": labels})

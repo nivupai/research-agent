@@ -228,3 +228,36 @@ Hybrid + rerank vs dense under v2: recall@10 +0.003 [-0.026, +0.036], p = 1.0; n
 -0.059 [-0.176, +0.074], p = 0.45. Recall drops for every mode because more papers count as
 relevant (best achievable recall@10 0.452, was 0.576). The conclusion does not change: no
 measurable difference between hybrid + rerank and embeddings-only on these 8 queries.
+
+## 7. Reference v2 preview: constructed contradictions labelled by construction
+
+Prepared, not adopted: nothing has been retrained and the README headline still uses the
+teacher reference. `uv run python scripts/make_verifier_data.py relabel` writes
+`data/finetune/v2/{train,val,test}.jsonl` and `data/finetune/verifier_bundle_v2.zip`
+(gitignored, like v1; v1 files are untouched). Rule-perturbed pairs (direction, negation,
+number, entity swap; `--construction-kinds` to choose) get `labels.target = CONTRADICTED`
+with `label_source = "construction"`, every other pair `labels.target = teacher`, and
+`labels.teacher` keeps the original. Changes: train 171 SUPPORTED + 9 NOT_ENOUGH_INFO -> CONTRADICTED,
+val 18 + 1, test 18 SUPPORTED -> CONTRADICTED. The notebook now trains on `labels.target`
+when present (so it accepts either bundle) and records which reference it used.
+
+`uv run python scripts/preview_reference_v2.py`: existing systems scored on the 252 test
+pairs against both references (Gemini verifier labels read from the cache only; router at
+0.75 escalates 23 pairs). "Without swap" leaves entity swaps on the teacher label, because a
+swapped entity can read as NOT_ENOUGH_INFO rather than CONTRADICTED.
+
+| system | accuracy vs v1 (teacher) | accuracy vs v2 | accuracy vs v2 without swap | macro-F1 vs v1 | macro-F1 vs v2 |
+|---|---|---|---|---|---|
+| DeBERTa-v3-large NLI | 0.742 [0.687, 0.794] | 0.802 [0.750, 0.849] | 0.778 [0.726, 0.825] | 0.721 | 0.780 |
+| small LoRA (T4, trained on teacher labels) | 0.833 [0.786, 0.877] | 0.845 [0.802, 0.889] | 0.825 [0.778, 0.873] | 0.780 | 0.801 |
+| router at 0.75 | 0.865 [0.821, 0.905] | 0.873 [0.829, 0.913] | 0.861 [0.817, 0.901] | 0.824 | 0.840 |
+| Gemini verifier | 0.885 [0.845, 0.921] | 0.885 [0.845, 0.925] | 0.881 [0.837, 0.921] | 0.847 | 0.855 |
+| Gemini teacher labels (as a system) | 1.000 (by definition) | 0.929 [0.893, 0.960] | 0.956 [0.929, 0.980] | 1.000 | 0.926 |
+
+Reading: the correction mostly helps NLI (+0.060 accuracy), which had been marked wrong for
+calling real contradictions CONTRADICTED; the LoRA-NLI gap shrinks from 0.091 to 0.043 and
+their CIs now overlap. The Gemini verifier is unchanged and still the most accurate single
+system; the ranking does not change. The LoRA here was trained on the uncorrected labels, so
+the v2 numbers for it are a lower bound for a model retrained on the v2 bundle (needs the T4
+notebook, about 105 minutes, owner's decision). The router's test accuracy (0.865 vs teacher)
+had not been reported before; Week 7 reported its val accuracy only.

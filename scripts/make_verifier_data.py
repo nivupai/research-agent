@@ -10,6 +10,10 @@ Steps (default: all):
            eval/labels/verifier_test_human.jsonl (blank human_label)
   bundle   data/finetune/verifier_bundle.zip for notebooks/train_verifier_lora.ipynb
            (teacher-labelled train/val/test JSONL + README with the notebook settings)
+  relabel  reference v2 (opt-in, never overwrites v1): rule-perturbed pairs of
+           --construction-kinds get labels.target = CONTRADICTED (label_source="construction"),
+           all others labels.target = teacher; labels.teacher is kept. Writes
+           data/finetune/v2/{train,val,test}.jsonl and data/finetune/verifier_bundle_v2.zip
 
 Usage: uv run python scripts/make_verifier_data.py [build teacher nli export] [--teacher-model M]
 """
@@ -22,17 +26,20 @@ import json
 import random
 import time
 from collections import Counter
+from collections.abc import Sequence
 from pathlib import Path
 
 from bioagent.config import get_settings
 from bioagent.eval.cache import JSONCache
 from bioagent.finetune.data import (
+    CONSTRUCTED_KINDS,
     Pair,
     Paper,
     check_no_leakage,
     claims_from_record,
     dedupe,
     read_pairs,
+    relabel_by_construction,
     run_records,
     synthetic_pairs,
     write_pairs,
@@ -205,16 +212,19 @@ test.jsonl is included for that local evaluation; the notebook does not train on
 """
 
 
-def bundle() -> Path:
-    """Zip the teacher-labelled splits with a README of the notebook settings."""
+def bundle(src: Path = OUT, dest: Path | None = None, readme_extra: str = "") -> Path:
+    """Zip the labelled splits with a README of the notebook settings."""
     import zipfile
 
+    dest = dest or BUNDLE
     counts: dict[str, dict[str, int]] = {}
     texts: dict[str, str] = {}
     for split in ("train", "val", "test"):
-        rows = [json.loads(line) for line in (OUT / f"{split}.jsonl").read_text().splitlines()]
+        rows = [json.loads(line) for line in (src / f"{split}.jsonl").read_text().splitlines()]
         labelled = [r for r in rows if (r.get("labels") or {}).get("teacher")]
-        counts[split] = dict(Counter(r["labels"]["teacher"] for r in labelled))
+        counts[split] = dict(
+            Counter(r["labels"].get("target") or r["labels"]["teacher"] for r in labelled)
+        )
         texts[f"{split}.jsonl"] = "".join(
             json.dumps(r, ensure_ascii=False) + "\n" for r in labelled
         )
@@ -223,23 +233,54 @@ def bundle() -> Path:
     teacher = next(
         (
             json.loads(line)["labels"]["teacher_model"]
-            for line in (OUT / "train.jsonl").read_text().splitlines()
+            for line in (src / "train.jsonl").read_text().splitlines()
         ),
         "the Gemini teacher",
     )
-    with zipfile.ZipFile(BUNDLE, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(dest, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for name, text in texts.items():
             zf.writestr(name, text)
-        zf.writestr("README.txt", BUNDLE_README.format(teacher=teacher, counts=counts))
-    size = BUNDLE.stat().st_size
-    print(f"bundle: {BUNDLE} ({size / 1e6:.1f} MB) {counts}")
-    return BUNDLE
+        readme = BUNDLE_README.format(teacher=teacher, counts=counts) + readme_extra
+        zf.writestr("README.txt", readme)
+    size = dest.stat().st_size
+    print(f"bundle: {dest} ({size / 1e6:.1f} MB) {counts}")
+    return dest
+
+
+V2 = OUT / "v2"
+BUNDLE_V2 = OUT / "verifier_bundle_v2.zip"
+V2_README = """
+Reference v2: labels.target is the label to learn. Rule-perturbed pairs ({kinds}) are labelled
+CONTRADICTED by construction (label_source="construction": the edited sentence comes from the
+passage itself); every other pair keeps the teacher label (label_source="teacher").
+labels.teacher still holds the original teacher label. The notebook uses labels.target when
+present, so the same notebook trains on either bundle.
+"""
+
+
+def relabel(kinds: Sequence[str]) -> Path:
+    """Write reference-v2 splits and bundle; v1 files are left untouched."""
+    V2.mkdir(parents=True, exist_ok=True)
+    changed: Counter[str] = Counter()
+    for split in ("train", "val", "test"):
+        pairs = [relabel_by_construction(p, kinds) for p in read_pairs(OUT / f"{split}.jsonl")]
+        for p in pairs:
+            if p.labels.get("teacher") and p.labels.get("target") != p.labels.get("teacher"):
+                changed[f"{split}: {p.labels.get('teacher')} -> {p.labels.get('target')}"] += 1
+        write_pairs(V2 / f"{split}.jsonl", pairs)
+    print(f"relabel ({', '.join(kinds)}): {dict(sorted(changed.items()))}")
+    return bundle(V2, BUNDLE_V2, V2_README.format(kinds=", ".join(kinds)))
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("steps", nargs="*", default=["build", "teacher", "nli", "export", "bundle"])
     parser.add_argument("--teacher-model", default="gemini:gemini-3.5-flash-lite")
+    parser.add_argument(
+        "--construction-kinds",
+        default=",".join(CONSTRUCTED_KINDS),
+        help="relabel: perturbation kinds labelled CONTRADICTED by construction",
+    )
     args = parser.parse_args()
     for step in args.steps:
         if step == "build":
@@ -252,5 +293,7 @@ if __name__ == "__main__":
             export(args.teacher_model)
         elif step == "bundle":
             bundle()
+        elif step == "relabel":
+            relabel([k for k in args.construction_kinds.split(",") if k])
         else:
             raise SystemExit(f"unknown step {step}")

@@ -224,3 +224,33 @@ def test_llm_backend_never_invents_labels(monkeypatch: pytest.MonkeyPatch) -> No
     scorer = LLMPairScorer(model=None, spec=ModelSpec("gemini", "x"), cache=JSONCache(":memory:"))
     with pytest.raises(LLMVerifierUnavailableError, match="quota exhausted"):
         scorer.labels([("passage", "claim")])
+
+
+def test_relabel_by_construction_keeps_teacher_label() -> None:
+    from bioagent.finetune.data import Pair, relabel_by_construction, target_label
+
+    sup = {"teacher": "SUPPORTED"}
+    neg = Pair("X decreased Y.", "X increased Y.", "1", "direction", labels=dict(sup))
+    pos = Pair("X increased Y.", "X increased Y.", "1", "positive", labels=dict(sup))
+    swap = Pair("A binds B.", "C binds B.", "1", "swap", labels={"teacher": "NOT_ENOUGH_INFO"})
+    v2 = relabel_by_construction(neg)
+    assert v2.labels["target"] == "CONTRADICTED" and v2.labels["label_source"] == "construction"
+    assert v2.labels["teacher"] == "SUPPORTED" and neg.labels == {"teacher": "SUPPORTED"}
+    assert target_label(v2) == "CONTRADICTED" and target_label(neg) == "SUPPORTED"
+    kept = relabel_by_construction(pos)
+    assert kept.labels["target"] == "SUPPORTED" and kept.labels["label_source"] == "teacher"
+    no_swap = relabel_by_construction(swap, ["direction", "negation", "number"])
+    assert target_label(no_swap) == "NOT_ENOUGH_INFO"
+    unlabelled = relabel_by_construction(Pair("a", "b", "1", "cross"))
+    assert target_label(unlabelled) is None
+
+
+def test_notebook_reads_target_or_teacher_label() -> None:
+    import json
+    from pathlib import Path
+
+    nb = json.loads(Path("notebooks/train_verifier_lora.ipynb").read_text())
+    code = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
+    assert 'labels.get("target") or labels.get("teacher")' in code
+    assert '["labels"]["teacher"]' not in code
+    assert "verifier_bundle_v2.zip" in code
