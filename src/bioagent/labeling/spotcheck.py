@@ -29,6 +29,8 @@ RETRIEVAL_SPOTCHECK = LABELS_DIR / "spotcheck_retrieval.jsonl"
 VERIFIER_SHEET = LABELS_DIR / "verifier_test_human.jsonl"
 VERIFIER_CLAUDE = LABELS_DIR / "verifier_test_claude.jsonl"
 JUDGE_SHEET = LABELS_DIR / "judge_calibration.jsonl"
+JUDGE_CLAUDE = LABELS_DIR / "judge_calibration_claude.jsonl"
+RETRIEVAL_RETEST = LABELS_DIR / "spotcheck_retrieval_claude_v2.jsonl"
 POOL = Path("data/labels/pool.jsonl")
 SECONDS_PER_ITEM = {"retrieval": 30, "verifier": 25, "judge": 60}
 
@@ -131,9 +133,42 @@ def agreement() -> dict[str, Any]:
     if VERIFIER_CLAUDE.exists():
         cl = {r["id"]: r["label"] for r in read_jsonl(VERIFIER_CLAUDE)}
         cpairs = [(cl[i], t) for i, t in teacher.items() if i in cl]
-        out["verifier_claude_vs_teacher (not human)"] = _kappa(cpairs, cats, bootstrap_kappa, False)
+        out["verifier_claude_vs_teacher (inter-model, not human)"] = _kappa(
+            cpairs, cats, bootstrap_kappa, False
+        )
         hc = [(r["human_label"], cl[r["id"]]) for r in rows if r["id"] in cl]
         out["verifier_human_vs_claude"] = _kappa(hc, cats, bootstrap_kappa, False)
+    out.update(inter_model_agreement())
+    return out
+
+
+def inter_model_agreement() -> dict[str, Any]:
+    """Claude as a second rater: vs the Gemini judge, and retrieval test-retest (not human)."""
+    from bioagent.eval.stats import bootstrap_kappa
+
+    out: dict[str, Any] = {}
+    if JUDGE_CLAUDE.exists():
+        claude = {r["id"]: r["label"] for r in read_jsonl(JUDGE_CLAUDE)}
+        rows = [r for r in read_jsonl(JUDGE_SHEET) if r["id"] in claude]
+        for kind, cats, ordinal in (
+            ("answer", ["incorrect", "partially", "correct"], True),
+            ("yes/no (abstain, premise)", ["no", "yes"], False),
+        ):
+            group = [r for r in rows if (r["judge_kind"] == "answer") == (kind == "answer")]
+            pairs = [(claude[r["id"]], str(r["judge_label"])) for r in group]
+            out[f"judge_claude_vs_gemini_judge ({kind}; inter-model, not human)"] = _kappa(
+                pairs, cats, bootstrap_kappa, ordinal
+            )
+    if RETRIEVAL_RETEST.exists():
+        first = {(r["query_id"], r["pmid"]): str(r["grade"]) for r in read_jsonl(RETRIEVAL_CLAUDE)}
+        pairs = [
+            (first[(r["query_id"], r["pmid"])], str(r["grade"]))
+            for r in read_jsonl(RETRIEVAL_RETEST)
+            if (r["query_id"], r["pmid"]) in first
+        ]
+        out["retrieval_claude_v1_vs_blind_v2 (self-consistency, not human)"] = _kappa(
+            pairs, ["0", "1", "2"], bootstrap_kappa, True
+        )
     return out
 
 

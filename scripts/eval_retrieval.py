@@ -3,8 +3,9 @@
 Usage: uv run python scripts/eval_retrieval.py [--labels human|claude] [-k 10]
 
 --labels human (default) reads the hand grades in data/labels/pool.jsonl; --labels claude reads
-eval/labels/retrieval_claude.jsonl (relevance graded by Claude, labeler="claude"; results are
-marked as such). --qrels overrides either. The qrels file is JSONL with query_id, query, pmid
+eval/labels/retrieval_claude_v2.jsonl (graded by Claude under "would this abstract help answer
+the query"; claude-v1 is the earlier stricter rubric). Results say which labels they used.
+--qrels overrides either. The qrels file is JSONL with query_id, query, pmid
 and grade (0/1/2); lines with grade null are ignored. Reports each metric with a bootstrap 95%
 CI over queries and paired comparisons (CI and sign-flip p) of every mode against --baseline.
 Writes a markdown table and JSON to results/retrieval/.
@@ -31,9 +32,14 @@ from bioagent.retrieval.retriever import retriever_from_settings
 
 LABEL_FILES = {
     "human": Path("data/labels/pool.jsonl"),
-    "claude": Path("eval/labels/retrieval_claude.jsonl"),
+    "claude": Path("eval/labels/retrieval_claude_v2.jsonl"),
+    "claude-v1": Path("eval/labels/retrieval_claude.jsonl"),
 }
-LABELER = {"human": "human relevance grades", "claude": "Claude-graded relevance (not human)"}
+LABELER = {
+    "human": "human relevance grades",
+    "claude": "Claude-graded relevance, rubric v2 'would it help answer the query' (not human)",
+    "claude-v1": "Claude-graded relevance, rubric v1 (not human)",
+}
 METRICS = ("recall@{k}", "ndcg@{k}", "mrr", "precision@{k}")
 
 

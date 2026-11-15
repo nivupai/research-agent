@@ -215,3 +215,30 @@ def test_kappa_summary() -> None:
     assert res["n"] == 6 and res["exact_agreement"] == pytest.approx(0.833, abs=1e-3)
     assert res["weighted_kappa_quadratic"]["mean"] > res["kappa"]["mean"] > 0
     assert _kappa([], ["0"], bootstrap_kappa, False)["n"] == 0
+
+
+def test_inter_model_agreement(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from bioagent.labeling import spotcheck as sc
+
+    judge = [
+        {"id": "a", "judge_kind": "answer", "judge_label": "correct"},
+        {"id": "b", "judge_kind": "answer", "judge_label": "partially"},
+        {"id": "c", "judge_kind": "abstain", "judge_label": "yes"},
+    ]
+    claude_judge = [{"id": "a", "label": "correct"}, {"id": "b", "label": "correct"}]
+    claude_judge.append({"id": "c", "label": "yes"})
+    first = [{"query_id": "q", "pmid": p, "grade": g} for p, g in (("1", 2), ("2", 0))]
+    retest = [{"query_id": "q", "pmid": p, "grade": g} for p, g in (("1", 2), ("2", 1))]
+    for name, rows in (
+        ("JUDGE_SHEET", judge),
+        ("JUDGE_CLAUDE", claude_judge),
+        ("RETRIEVAL_CLAUDE", first),
+        ("RETRIEVAL_RETEST", retest),
+    ):
+        path = _write(tmp_path / f"{name}.jsonl", rows)  # type: ignore[arg-type]
+        monkeypatch.setattr(sc, name, path)
+    out = sc.inter_model_agreement()
+    answer = next(v for k, v in out.items() if k.startswith("judge_claude_vs_gemini_judge (answer"))
+    assert answer["n"] == 2 and answer["exact_agreement"] == 0.5
+    retest_key = next(k for k in out if k.startswith("retrieval_claude_v1_vs_blind_v2"))
+    assert "not human" in retest_key and out[retest_key]["n"] == 2
