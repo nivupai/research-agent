@@ -56,6 +56,9 @@ Open issues are marked **open**.
 * **Fix**: make drug discovery deterministic: always run the graph lookup, three corpus
   searches and a PubMed search, and merge the drugs annotated in the hits (`4adb2f1`).
   TZDs, salicylates and aspirin came back; sorafenib still ranks too low to be retrieved.
+  Offline follow-up: the direct paper ranks 25th (the agent keeps 15; BM25 alone has it 7th,
+  the reranker demotes it), and the graph edge rests on one paper, so `min_evidence=2` drops
+  it ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
 * **Lesson**: do not rely on a small model to follow a multi-step search recipe; run the
   recipe in code and give the model the union.
 
@@ -82,12 +85,19 @@ Open issues are marked **open**.
 ### 8. MGMT "irreversible suicide inactivation" flagged as contradicted (**open**)
 * **Symptom**: a textbook-correct claim scored contradiction 1.00 against its cited abstract
   (see the example answer in the README).
-* **Root cause**: NLI false positive: the abstract describes MGMT repair without saying the
-  enzyme is consumed, and the model reads the extra detail as a contradiction.
-* **Status**: not fixed. The verifier is deliberately strict; claims supported only by
-  background knowledge get removed or flagged. Human labels on
-  `eval/labels/verifier_test_human.jsonl` would measure how often this happens.
-* **Lesson**: report verifier errors alongside its wins; "removed" does not mean "wrong".
+* **Root cause** (reproduced offline, `scripts/repro_claim.py`): the cited abstract garbles
+  the mechanism; it says MGMT "irreversibly inactivates TMZ", the claim says MGMT itself is
+  irreversibly inactivated. NLI reads the swapped roles as a contradiction (0.998), and one
+  contradicting window of one cited paper is enough to label the claim contradicted, even
+  though the other citation is neutral. The small LoRA verifier calls the same pair SUPPORTED
+  (0.998), which is over-generous in the other direction: the passage never says MGMT is
+  consumed, so the right label is "not enough info".
+* **Status**: not fixed. "Contradicted only if NLI and the LoRA agree" was measured on the
+  verifier test split: false contradictions 19 -> 10, but 9 of 45 true contradictions lost
+  (accuracy -0.032, p = 0.02), so it was not adopted
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Lesson**: a source can be wrong; "contradicted by the citation" and "false" are different
+  things, and the verifier should flag rather than remove when the evidence is a single window.
 
 ### 9. Silent NOT_ENOUGH_INFO when the LLM quota ran out
 * **Symptom**: a router re-score started while the Gemini quota was exhausted would have
@@ -108,12 +118,19 @@ Open issues are marked **open**.
 
 ### 11. PubMedQA accuracy 50% (**open**)
 * **Symptom**: smoke-suite PubMedQA accuracy 50.0% [22.2, 77.8] vs 91.7% on corpus questions.
-* **Root cause** (likely): the yes/no/maybe items need a judgement from one abstract without
-  its conclusion; the agent searches broadly, answers from many papers, and often leads with
-  the wrong label. Two of the first trial answers led with "Yes"/"Maybe" against gold
-  "no"/"yes".
-* **Status**: open; the full eval has not reached the PubMedQA items yet.
-* **Lesson**: per-category breakdowns matter; the headline number hid a weak category.
+* **Root cause** (from the saved records): not retrieval. Every answer cited exactly the
+  source paper (gold-PMID recall 1.0), and that abstract contained the decisive results. The
+  agent has a yes bias: gold "no" items were right in 1 of 8 runs, gold "yes" in 8 of 10, and
+  12 of 18 answers were "Yes". One answer said "Yes" to "are margins and T-stage accurate
+  predictors?" while the cited results showed 40% local failure with negative margins and
+  P = ns. (An earlier version of this entry guessed "answers from many papers"; the records
+  show otherwise.)
+* **Status**: open. Runs prepared for after the quota reset: finish the 100 PubMedQA items
+  (flash-lite baseline), then `--suite pubmedqa --synth gemini:gemini-3.5-flash` and a
+  results-first prompt variant
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Lesson**: check the hypothesis against the records before writing it down; per-category
+  breakdowns matter, the headline number hid a weak category.
 
 ## Infrastructure and operations
 
