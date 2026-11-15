@@ -1,4 +1,4 @@
-.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa eval-injection audit-verify k8s-up k8s-load-image k8s-deploy k8s-down k8s-lint serve-up serve-down serve-deps serve-api serve-worker smoke
+.PHONY: install lint format test test-live test-docker test-models test-llm ask sandbox-image ingest index label-pool label label-sample label-plan eval-retrieval serve-literature serve-chemistry serve-sandbox serve-retrieval serve-graph graph-up graph-down kg-build test-neo4j eval-set eval-fixture eval-smoke eval-full eval-calibration judge-kappa eval-injection audit-verify k8s-up k8s-load-image k8s-deploy k8s-down k8s-lint serve-up serve-down serve-deps serve-api serve-worker smoke
 
 install:
 	uv sync --extra models
@@ -40,6 +40,17 @@ index:
 
 label-pool:
 	uv run python scripts/make_label_pool.py
+
+# Hand-labelling page (http://127.0.0.1:8765/): retrieval pool, verifier test pairs, judge sheet.
+# `make label-sample` first to grade the query-complete retrieval sample before the rest.
+label:
+	uv run bioagent label serve $(if $(wildcard data/labels/pool_sample.json),--sample)
+
+label-sample:
+	uv run bioagent label sample --queries $(or $(QUERIES),8)
+
+label-plan:
+	uv run bioagent label plan
 
 eval-retrieval:
 	uv run python scripts/eval_retrieval.py

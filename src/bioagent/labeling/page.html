@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bioagent labelling</title>
+<style>
+:root{--bg:#fafaf8;--fg:#1d1d1b;--muted:#6b6b66;--card:#fff;--line:#e2e1dc;--acc:#2d5fa8;
+--ok:#2e7d4f}
+@media (prefers-color-scheme:dark){:root{--bg:#171716;--fg:#ecebe6;--muted:#9a9990;
+--card:#211f1e;--line:#3a3936;--acc:#7aa7e8;--ok:#6cc08f}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);
+font:16px/1.55 system-ui,-apple-system,sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+header{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+button,select{font:inherit;color:inherit;background:var(--card);border:1px solid var(--line);
+border-radius:8px;padding:6px 12px;cursor:pointer}
+#opts{position:sticky;bottom:0;display:flex;flex-wrap:wrap;gap:8px;padding:10px 0;
+background:var(--bg);border-top:1px solid var(--line)}
+button.opt{flex:1 1 160px;text-align:left;padding:10px 14px}
+button.opt.sel{border-color:var(--acc);outline:2px solid var(--acc)}
+kbd{font:13px ui-monospace,monospace;border:1px solid var(--line);border-radius:4px;
+padding:0 5px;margin-right:8px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;
+margin-bottom:12px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);margin:0 0 4px}
+.sec{margin-bottom:14px;white-space:pre-wrap}.meta{color:var(--muted);font-size:14px}
+.bar{height:6px;background:var(--line);border-radius:3px;overflow:hidden;flex:1;min-width:120px}
+.bar>div{height:100%;background:var(--ok)}
+.muted{color:var(--muted);font-size:14px}#msg{min-height:1.5em}
+</style></head><body><main>
+<header><select id="sheet" aria-label="sheet"></select>
+<div class="bar"><div id="fill" style="width:0"></div></div><span id="prog" class="muted"></span>
+</header>
+<p id="instr" class="muted"></p>
+<div class="card" id="item"></div>
+<div id="opts"></div>
+<p class="muted"><kbd>s</kbd>skip <kbd>b</kbd>back <kbd>u</kbd>clear label</p>
+<p id="msg" class="muted" role="status"></p>
+</main><script>
+let sheets=[],cur=null,item=null,skipped=new Set();
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+async function api(path,opts){const r=await fetch(path,opts);
+if(!r.ok)throw new Error((await r.json()).detail||r.status);return r.json();}
+function showProgress(p){let d=p.done,t=p.total,extra='';
+if(p.focus_total){d=p.focus_done;t=p.focus_total;
+extra=` (sample: ${p.focus_groups} queries; ${p.done}/${p.total} overall)`;}
+$('fill').style.width=(t?100*d/t:0)+'%';$('prog').textContent=`${d}/${t}${extra}`;}
+function render(it){item=it;
+if(it.done){$('item').innerHTML='<p>All items in this sheet are labelled.</p>';
+$('opts').innerHTML='';showProgress(it.progress);return;}
+let h='';for(const s of it.sections){
+if(s.kind==='meta'){h+=`<div class="meta">${esc(s.body)}</div>`;continue;}
+h+=`<div class="sec">${s.heading?`<h2>${esc(s.heading)}</h2>`:''}`;
+h+=s.kind==='list'?'<ul>'+s.items.map(x=>`<li>${esc(x)}</li>`).join('')+'</ul>':esc(s.body);
+h+='</div>';}
+h+=`<div class="meta">item ${it.position} · ${esc(it.key)}${it.in_focus===false?' · outside sample':''}</div>`;
+$('item').innerHTML=h;
+$('opts').innerHTML=it.options.map(o=>`<button class="opt${String(o.value)===String(it.label)?' sel':''}"
+data-v="${esc(o.value)}"><kbd>${esc(o.key)}</kbd>${esc(o.text)}</button>`).join('');
+for(const b of $('opts').querySelectorAll('button'))b.onclick=()=>answer(b.dataset.v);
+showProgress(it.progress);}
+async function next(after){render(await api(`/api/${cur}/next?after=${encodeURIComponent(after||'')}`+
+`&skipped=${encodeURIComponent([...skipped].join(','))}`));}
+async function answer(v){if(!item||item.done)return;
+const o=item.options.find(o=>String(o.value)===String(v));
+await api(`/api/${cur}/item?key=${encodeURIComponent(item.key)}`,{method:'POST',
+headers:{'content-type':'application/json'},body:JSON.stringify({value:o.value})});
+skipped.delete(item.key);$('msg').textContent=`saved ${item.key}: ${o.text}`;next(item.key);}
+async function back(){if(!item||item.done)return;try{
+render(await api(`/api/${cur}/previous?before=${encodeURIComponent(item.key)}`));}
+catch(e){$('msg').textContent='no earlier item';}}
+async function clearLabel(){if(!item||item.done)return;
+await api(`/api/${cur}/item?key=${encodeURIComponent(item.key)}`,{method:'POST',
+headers:{'content-type':'application/json'},body:JSON.stringify({value:null})});
+render(await api(`/api/${cur}/item?key=${encodeURIComponent(item.key)}`));
+$('msg').textContent='label cleared';}
+document.addEventListener('keydown',e=>{if(e.metaKey||e.ctrlKey||e.altKey)return;
+if(e.target.tagName==='SELECT')return;
+if(e.key==='s'&&item&&!item.done){skipped.add(item.key);$('msg').textContent='skipped';next(item.key);}
+else if(e.key==='b')back();else if(e.key==='u')clearLabel();
+else if(item&&!item.done){const o=item.options.find(o=>o.key===e.key);if(o)answer(o.value);}});
+async function pick(name){cur=name;skipped=new Set();const s=sheets.find(s=>s.name===name);
+$('instr').textContent=s.instructions;try{localStorage.setItem('sheet',name)}catch(e){}next();}
+(async()=>{sheets=await api('/api/sheets');
+$('sheet').innerHTML=sheets.map(s=>`<option value="${s.name}">${esc(s.title)}</option>`).join('');
+let saved=null;try{saved=localStorage.getItem('sheet')}catch(e){}
+const first=sheets.some(s=>s.name===saved)?saved:sheets[0].name;$('sheet').value=first;
+$('sheet').onchange=e=>pick(e.target.value);pick(first);})();
+</script></body></html>

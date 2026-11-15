@@ -94,7 +94,7 @@ Gemini free tier (nothing was billed).
 
 | experiment | result | report |
 |---|---|---|
-| Hybrid + rerank vs embeddings-only retrieval (recall@10) | **pending**: needs relevance grades in `data/labels/pool.jsonl` (0 of 1,929 graded), then `make eval-retrieval` | [README: Retrieval evaluation](#retrieval-evaluation) |
+| Hybrid + rerank vs embeddings-only retrieval (recall@10) | **pending**: needs relevance grades in `data/labels/pool.jsonl` (0 of 1,929 graded; `make label-sample label`), then `make eval-retrieval` | [README: Retrieval evaluation](#retrieval-evaluation) |
 | Claim verification on vs off | off: groundedness 57.0% [42.5, 71.4] (about 43% of checkable claims unsupported); on: every failed claim removed or marked `[unverified]` (18-38% of draft claims failed in 3 live runs) | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
 | Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794] | [verifier_week7.md](eval/reports/verifier_week7.md) |
 | Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; re-scoring the same 50 smoke answers, the router judged more claims supported than the NLI verifier (groundedness 0.570 -> 0.677, +0.107 [+0.007, +0.197], p = 0.031); the answers did not change, so this measures the verifier, not answer quality | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
@@ -227,9 +227,18 @@ Model-dependent code needs the `models` extra (`uv sync --extra models`); CI run
 
 ```bash
 make label-pool      # pool top-20 per mode for configs/retrieval_queries.yaml (50 queries)
-# grade data/labels/pool.jsonl by hand: "grade": 0 / 1 / 2 (leave null to skip)
+make label-sample    # pick 8 queries (~300 items), stratified by query type
+make label           # labelling page at http://127.0.0.1:8765/ (keys 0/1/2, s skip, b back)
 make eval-retrieval  # recall@10, nDCG@10, MRR, precision@10, latency p50/p95 per mode
 ```
+
+`make label` serves one local page for all three hand-labelled sheets (retrieval pool,
+verifier test pairs, judge calibration). It saves after every answer, so you can stop and
+resume at any time, and it hides the judge's own label while you grade. Recall needs every
+relevant paper of a query known, so the sample grades whole queries rather than a few items
+from each of the 50. `make label-plan` prints how many labels each metric needs for a given
+confidence interval: 8 queries (~300 items) measure the hybrid vs BM25 difference to about
+±0.10, while one mode's recall to ±0.10 needs about 25 queries.
 
 Results are written to `results/retrieval/` as markdown and JSON. No relevance labels are
 shipped; grading is manual.
