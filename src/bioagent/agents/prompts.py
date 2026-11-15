@@ -102,3 +102,22 @@ Rules:
 - Do not include a reference list; it is generated automatically.
 
 {UNTRUSTED_RULES}"""
+
+# Opt-in synthesizer rule (SYNTH_VARIANT=results_first), evaluated against the default on
+# PubMedQA-style yes/no questions before any adoption.
+RESULTS_FIRST_RULE = """
+Yes/no questions: before answering, find the decisive result in the evidence (the study's
+main outcome and its statistics). Answer Yes or No according to that result, even if the
+question is phrased to expect the other answer; a non-significant or absent effect (e.g.
+"P = ns", no difference) is evidence for No, not Yes. Answer Maybe only when the results are
+mixed or explicitly inconclusive. Start the answer with Yes, No or Maybe, then the result."""
+
+SYNTH_VARIANTS = ("default", "results_first")
+
+
+def synthesizer_prompt(variant: str = "default") -> str:
+    if variant == "default":
+        return SYNTHESIZER
+    if variant == "results_first":
+        return SYNTHESIZER + "\n" + RESULTS_FIRST_RULE
+    raise ValueError(f"unknown synthesizer variant {variant!r}; choose from {SYNTH_VARIANTS}")

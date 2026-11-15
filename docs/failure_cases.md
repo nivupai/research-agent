@@ -56,6 +56,11 @@ Open issues are marked **open**.
 * **Fix**: make drug discovery deterministic: always run the graph lookup, three corpus
   searches and a PubMed search, and merge the drugs annotated in the hits (`4adb2f1`).
   TZDs, salicylates and aspirin came back; sorafenib still ranks too low to be retrieved.
+  Offline follow-up: the direct paper ranks 25th (the agent keeps 15; BM25 alone has it 7th,
+  the reranker demotes it), and the graph edge rests on one paper, so `min_evidence=2` drops
+  it ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)). Fusing the
+  reranker order with BM25 (`RERANK_FUSION=true`) lifts the paper to rank 8 offline; the live
+  test is still pending, and the setting is off by default.
 * **Lesson**: do not rely on a small model to follow a multi-step search recipe; run the
   recipe in code and give the model the union.
 
@@ -82,12 +87,19 @@ Open issues are marked **open**.
 ### 8. MGMT "irreversible suicide inactivation" flagged as contradicted (**open**)
 * **Symptom**: a textbook-correct claim scored contradiction 1.00 against its cited abstract
   (see the example answer in the README).
-* **Root cause**: NLI false positive: the abstract describes MGMT repair without saying the
-  enzyme is consumed, and the model reads the extra detail as a contradiction.
-* **Status**: not fixed. The verifier is deliberately strict; claims supported only by
-  background knowledge get removed or flagged. Human labels on
-  `eval/labels/verifier_test_human.jsonl` would measure how often this happens.
-* **Lesson**: report verifier errors alongside its wins; "removed" does not mean "wrong".
+* **Root cause** (reproduced offline, `scripts/repro_claim.py`): the cited abstract garbles
+  the mechanism; it says MGMT "irreversibly inactivates TMZ", the claim says MGMT itself is
+  irreversibly inactivated. NLI reads the swapped roles as a contradiction (0.998), and one
+  contradicting window of one cited paper is enough to label the claim contradicted, even
+  though the other citation is neutral. The small LoRA verifier calls the same pair SUPPORTED
+  (0.998), which is over-generous in the other direction: the passage never says MGMT is
+  consumed, so the right label is "not enough info".
+* **Status**: not fixed. "Contradicted only if NLI and the LoRA agree" was measured on the
+  verifier test split: false contradictions 19 -> 10, but 9 of 45 true contradictions lost
+  (accuracy -0.032, p = 0.02), so it was not adopted
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)).
+* **Lesson**: a source can be wrong; "contradicted by the citation" and "false" are different
+  things, and the verifier should flag rather than remove when the evidence is a single window.
 
 ### 9. Silent NOT_ENOUGH_INFO when the LLM quota ran out
 * **Symptom**: a router re-score started while the Gemini quota was exhausted would have
@@ -104,16 +116,45 @@ Open issues are marked **open**.
 * **Fix**: inference-time LLM labels use their own cache namespace (`2c131a7`).
 * **Lesson**: when a model is both the reference and a contestant, check the caches.
 
+### 16. The teacher labels some plain contradictions as SUPPORTED (**open**)
+* **Symptom**: labelling the verifier spot-check independently, Claude disagreed with the
+  Gemini teacher on 11 of 50 pairs, every time with the teacher saying SUPPORTED; four were
+  synthetic contradictions such as "Exercise decreased cardiac AMPKalpha2 activity" against a
+  passage saying it increased.
+* **Root cause**: teacher leniency. Across the dataset the teacher labels 28% of synthetic
+  contradiction pairs (negation, number change, role swap) SUPPORTED; DeBERTa NLI calls 16 of
+  the 18 such test pairs CONTRADICTED.
+* **Fix tried**: reference v2 labels the edited pairs CONTRADICTED by construction; the
+  LoRA was retrained on it. Against v2 the retrained adapter catches 16 of the 18 edited
+  contradictions (v1: 10) and the router 17, but on real agent claims, whose labels did not
+  change, it is worse: 56 vs 65 of 80 correct (p = 0.012), with more NOT_ENOUGH_INFO claims
+  called SUPPORTED (16 vs 11 of 21).
+* **Status**: open. v1 stays the default adapter; v2 is selectable. Fixing the labels alone
+  taught the model the synthetic edit pattern, not better judgement on real claims
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md), section 8).
+* **Lesson**: a model-generated reference needs an independent check before it is used as
+  ground truth; a second rater found in an hour what accuracy numbers hid. And after a fix,
+  score the slice that matters (real claims) separately: the overall number improved while
+  that slice got worse.
+
 ## Evaluation
 
 ### 11. PubMedQA accuracy 50% (**open**)
 * **Symptom**: smoke-suite PubMedQA accuracy 50.0% [22.2, 77.8] vs 91.7% on corpus questions.
-* **Root cause** (likely): the yes/no/maybe items need a judgement from one abstract without
-  its conclusion; the agent searches broadly, answers from many papers, and often leads with
-  the wrong label. Two of the first trial answers led with "Yes"/"Maybe" against gold
-  "no"/"yes".
-* **Status**: open; the full eval has not reached the PubMedQA items yet.
-* **Lesson**: per-category breakdowns matter; the headline number hid a weak category.
+* **Root cause** (from the saved records): not retrieval. Every answer cited exactly the
+  source paper (gold-PMID recall 1.0), and that abstract contained the decisive results. The
+  agent has a yes bias: gold "no" items were right in 1 of 8 runs, gold "yes" in 8 of 10, and
+  12 of 18 answers were "Yes". One answer said "Yes" to "are margins and T-stage accurate
+  predictors?" while the cited results showed 40% local failure with negative margins and
+  P = ns. (An earlier version of this entry guessed "answers from many papers"; the records
+  show otherwise.)
+* **Status**: open. On 30 held-out items the bias reproduces (56.7% [40.0, 73.3]; gold
+  "no" 5 of 12 right, 19 "yes" answers for 12 gold "yes"). A flash synthesizer and a
+  results-first prompt rule were tried; neither changed accuracy (both +0.000 on the shared
+  items, which were only 19 and 24 because the free quota ran out), so neither was adopted
+  ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md), section 9).
+* **Lesson**: check the hypothesis against the records before writing it down; per-category
+  breakdowns matter, the headline number hid a weak category.
 
 ## Infrastructure and operations
 

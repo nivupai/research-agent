@@ -56,6 +56,7 @@ class EvalConfig:
     retrieval: str = "fixture-bm25"
     graph: bool = False
     agent_verify: bool = False
+    synth_variant: str = "default"
     defenses: bool = True  # SECURITY_DEFENSES for the agent (off: baseline for attack rates)
     nli: bool = False  # scoring only (citation support, groundedness); not in the hash
     dataset_version: str = DATASET_VERSION
@@ -71,7 +72,7 @@ class EvalConfig:
                 provider=provider,
                 planner=spec,
                 specialist=spec,
-                synth=spec,
+                synth=kw.pop("synth", spec),
                 judge=spec,
                 **kw,
             )
@@ -84,13 +85,17 @@ class EvalConfig:
             "planner",
             "specialist",
             "synth",
+            "synth_variant",
             "retrieval",
             "graph",
             "agent_verify",
             "defenses",
             "prompts_hash",
         )
-        return stable_hash({k: getattr(self, k) for k in keys})
+        values = {k: getattr(self, k) for k in keys}
+        if values["synth_variant"] == "default":  # keeps hashes of earlier runs unchanged
+            del values["synth_variant"]
+        return stable_hash(values)
 
 
 def suite_items(root: Path, suite: str, log: Callable[[str], None] = print) -> list[EvalItem]:
@@ -130,6 +135,7 @@ def eval_settings(base: Settings, config: EvalConfig, run_dir: Path) -> Settings
             "planner_model": config.planner,
             "specialist_model": config.specialist,
             "synth_model": config.synth,
+            "synth_variant": config.synth_variant,
             "literature_model": None,
             "chemistry_model": None,
             "analysis_model": None,

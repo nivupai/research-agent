@@ -46,12 +46,14 @@ class Retriever:
         n_candidates: int = N_CANDIDATES,
         rerank_top: int = RERANK_TOP,
         rrf_k: int = RRF_K,
+        rerank_fusion: bool = False,
     ) -> None:
         self.store = store
         self._bm25, self._dense, self._reranker = bm25, dense, reranker
         self._bm25_factory, self._dense_factory = bm25_factory, dense_factory
         self._reranker_factory = reranker_factory
         self.n_candidates, self.rerank_top, self.rrf_k = n_candidates, rerank_top, rrf_k
+        self.rerank_fusion = rerank_fusion
         self._years: dict[str, int | None] | None = None
         self._lock = threading.Lock()  # SQLite connection + lazy model loading are shared
 
@@ -170,6 +172,13 @@ class Retriever:
                 ranked = sorted(zip(pool, scores, strict=True), key=lambda x: -x[1])
                 for rank, (pid, score) in enumerate(ranked, start=1):
                     stage(pid).rerank, stage(pid).rerank_rank = round(score, 4), rank
+                if self.rerank_fusion:
+                    # keep lexical evidence: RRF of the reranker order and the BM25 order
+                    in_pool = set(pool)
+                    bm25_order = [p for p, _ in bm25_hits if p in in_pool]
+                    ranked = reciprocal_rank_fusion(
+                        [[p for p, _ in ranked], bm25_order], k=self.rrf_k
+                    )
 
         top = ranked[:k]
         passages = self.store.get_passages([pid for pid, _ in top])
@@ -216,4 +225,5 @@ def retriever_from_settings(settings: Settings, embed_model: str | None = None) 
         reranker_factory=lambda: CrossEncoderReranker(
             settings.rerank_model, device=settings.embed_device
         ),
+        rerank_fusion=settings.rerank_fusion,
     )

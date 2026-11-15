@@ -82,3 +82,22 @@ def test_evaluate_and_table(tmp_path: Path) -> None:
     table = markdown_table(results)
     assert table.splitlines()[0].startswith("| mode | recall@10 | ndcg@10 | mrr")
     assert "| good | 1.0 | 1.0 | 1.0 |" in table
+
+
+def test_recall_ceiling_ci_and_mode_comparison() -> None:
+    from bioagent.eval.retrieval import Qrels, compare_modes, query_ci, recall_ceiling
+
+    qrels = Qrels(
+        queries={"a": "qa", "b": "qb"},
+        grades={"a": {str(i): 2 for i in range(20)}, "b": {"x": 1, "y": 0}},
+    )
+    assert recall_ceiling(qrels, 10) == pytest.approx((10 / 20 + 1.0) / 2)
+    results = {
+        "dense": {"per_query": {"a": {"m": 0.2}, "b": {"m": 0.5}}},
+        "hybrid": {"per_query": {"a": {"m": 0.4}, "b": {"m": 0.7}}},
+    }
+    ci = query_ci(results["dense"]["per_query"], "m")
+    assert ci["mean"] == pytest.approx(0.35)
+    assert ci["lo"] <= ci["mean"] <= ci["hi"]
+    cmp = compare_modes(results, "dense", "hybrid", "m")
+    assert cmp["delta"] == pytest.approx(0.2) and cmp["queries"] == 2

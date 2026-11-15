@@ -101,6 +101,9 @@ def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> Ag
         # Small local models lose track of the question with long prompts.
         synth_max_evidence=16 if specs.synth.provider == "ollama" else 40,
         synth_evidence_chars=700 if specs.synth.provider == "ollama" else 1100,
+        synth_variant=settings.synth_variant,
+        discovery_k=settings.discovery_k,
+        discovery_min_evidence=settings.discovery_min_evidence,
     )
 
 

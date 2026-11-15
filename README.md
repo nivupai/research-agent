@@ -84,8 +84,9 @@ Claim table (selected rows, claim text shortened; 33 claims in total, groundedne
 | 11 | supported | High MGMT protein levels cause TMZ resistance. | 1, 3, 8 | NLI entailment 0.86 vs [1] |
 
 References are PubMed records (e.g. [1] PMID 33433610, [3] PMID 24157870). Claim 8 is a known
-false contradiction (see `docs/failure_cases.md`): the verifier is strict, so correct
-textbook facts the cited abstracts do not state get flagged.
+false contradiction (see `docs/failure_cases.md`): the cited abstract itself says MGMT
+"irreversibly inactivates TMZ", the reverse of the claim, and NLI reads the swapped roles as
+a contradiction. It was flagged, not removed.
 
 ## Results
 
@@ -94,14 +95,15 @@ Gemini free tier (nothing was billed).
 
 | experiment | result | report |
 |---|---|---|
-| Hybrid + rerank vs embeddings-only retrieval (recall@10) | **pending**: needs relevance grades in `data/labels/pool.jsonl` (0 of 1,929 graded), then `make eval-retrieval` | [README: Retrieval evaluation](#retrieval-evaluation) |
+| Hybrid + rerank vs embeddings-only retrieval (8 queries, 299 pooled papers; **relevance graded by Claude, not humans**, criterion "would this abstract help answer the query") | recall@10 0.358 [0.304, 0.420] vs 0.355 [0.299, 0.421], paired +0.003 [-0.026, +0.036], p = 1.0: no measurable difference; nDCG@10 0.756 vs 0.815; the reranker adds ~220 ms per query. Claude test-retest kappa 0.69 [0.52, 0.85] on 50 items; human validation pending | [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Claim verification on vs off | off: groundedness 57.0% [42.5, 71.4] (about 43% of checkable claims unsupported); on: every failed claim removed or marked `[unverified]` (18-38% of draft claims failed in 3 live runs) | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
-| Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794] | [verifier_week7.md](eval/reports/verifier_week7.md) |
+| Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794]. Caveat: the teacher labels 28% of synthetic contradiction pairs SUPPORTED, so this reference favours teacher-like models. Retraining on corrected labels (v2) catches 16 of 18 such contradictions (v1: 10) but is worse on real agent claims (56 vs 65 of 80, p = 0.012), so v1 stays the default | [verifier_week7.md](eval/reports/verifier_week7.md), [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; re-scoring the same 50 smoke answers, the router judged more claims supported than the NLI verifier (groundedness 0.570 -> 0.677, +0.107 [+0.007, +0.197], p = 0.031); the answers did not change, so this measures the verifier, not answer quality | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Label agreement, **inter-model (Claude vs Gemini), not human validation** | verifier: Claude vs Gemini teacher kappa 0.63 [0.44, 0.81] (n = 50; all 11 disagreements are teacher SUPPORTED, and the teacher labels 28% of synthetic contradiction pairs SUPPORTED); judge: Claude vs Gemini judge kappa 0.84 [0.57, 1.00] (n = 36 graded answers). Human spot-check (`make label-spotcheck`, ~1.5 h) pending | [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Prompt-injection defences on vs off (attack success rate) | **pending**: needs maintainer-written `eval/questions/injection.jsonl`, then `make eval-injection` | [security_week9.md](eval/reports/security_week9.md) |
 | Semantic cache on vs off (50 requests, replay at 0.1x recorded time) | p95 9.47 s -> 6.01 s, p50 1.22 s -> 42 ms, 68% hits, hit p95 57 ms (single run, no CI) | [serving_week8.md](eval/reports/serving_week8.md) |
 | Worker autoscaling (kind + KEDA, 10 replay jobs) | 1 -> 4 workers in 16 s, all jobs done in 75 s (one worker: ~200 s), back to 1 at 92 s | [serving_week8.md](eval/reports/serving_week8.md) |
-| Smoke eval (25 questions x 2, flash-lite) | accuracy 80.0% [64.0, 94.0], flip rate 8%; PubMedQA 50.0% [22.2, 77.8] | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Smoke eval (25 questions x 2, flash-lite) | accuracy 80.0% [64.0, 94.0], flip rate 8%; PubMedQA 50.0% [22.2, 77.8]; held-out PubMedQA (30 items): 56.7% [40.0, 73.3], gold "no" 5 of 12, a yes bias that a flash synthesizer and a results-first prompt did not fix (n.s.) | [eval_and_verification.md](eval/reports/eval_and_verification.md), [failure_analysis_week11.md](eval/reports/failure_analysis_week11.md) |
 | Full eval, **partial** (65 of 188: computed + corpus only) | accuracy 91.5% [85.4, 96.9], citation support 81.2% [75.0, 87.1], groundedness 77.4% [70.5, 84.0], 19.9 s and $0.0099 per question | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
 
 **Draft resume line** (measured numbers; placeholders where results are pending):
@@ -113,6 +115,11 @@ Gemini free tier (nothing was billed).
 > through FastAPI/Redis with KEDA autoscaling (1 -> 4 workers in 16 s), a semantic cache (p50
 > 1.2 s -> 42 ms on repeats) and OpenTelemetry tracing; prompt-injection attack success
 > [PENDING]%, retrieval recall@10 [PENDING].
+
+(Retrieval has a Claude-graded result but no human-checked one yet, and it shows no
+hybrid-vs-dense difference, so it stays out of the line until the spot-check is done. No
+number in this README has been validated against human labels yet; the agreement figures are
+between models.)
 
 More: [failure cases and what they taught](docs/failure_cases.md) ·
 [3-minute demo script](docs/demo_script.md).
@@ -227,9 +234,21 @@ Model-dependent code needs the `models` extra (`uv sync --extra models`); CI run
 
 ```bash
 make label-pool      # pool top-20 per mode for configs/retrieval_queries.yaml (50 queries)
-# grade data/labels/pool.jsonl by hand: "grade": 0 / 1 / 2 (leave null to skip)
+make label-sample    # pick 8 queries (~300 items), stratified by query type
+make label           # labelling page at http://127.0.0.1:8765/ (keys 0/1/2, s skip, b back)
 make eval-retrieval  # recall@10, nDCG@10, MRR, precision@10, latency p50/p95 per mode
+uv run python scripts/eval_retrieval.py --labels claude   # on the Claude-graded sample
+make label-spotcheck # ~140 items (~1.5 h) that measure agreement instead of full sheets
+make label-agreement # human vs Claude (retrieval), human vs teacher (verifier), judge kappa
 ```
+
+`make label` serves one local page for all three hand-labelled sheets (retrieval pool,
+verifier test pairs, judge calibration). It saves after every answer, so you can stop and
+resume at any time, and it hides the judge's own label while you grade. Recall needs every
+relevant paper of a query known, so the sample grades whole queries rather than a few items
+from each of the 50. `make label-plan` prints how many labels each metric needs for a given
+confidence interval: 8 queries (~300 items) measure the hybrid vs BM25 difference to about
+±0.10, while one mode's recall to ±0.10 needs about 25 queries.
 
 Results are written to `results/retrieval/` as markdown and JSON. No relevance labels are
 shipped; grading is manual.
