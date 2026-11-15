@@ -39,6 +39,11 @@ marked `[unverified]` in the answer, so no unsupported claim is presented as ver
 | citation support | 0.721 | 0.838 | +0.117 [+0.001, +0.230] | 0.067 |
 | answer accuracy | 0.800 | 0.800 | 0 (same answers) | 1.0 |
 
+The answers are identical in both columns; only the verifier that scores them changed. The
+gain means the router judges more of the same claims as supported (fewer false
+contradictions/NEI from the NLI model, which the Week 7 test set also shows), not that the
+agent's answers got better.
+
 ## Evaluation suite
 
 **Smoke baseline** (`smoke-baseline`, 25 questions x 2 repeats, flash-lite, isolated BM25 eval

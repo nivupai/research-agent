@@ -97,7 +97,7 @@ Gemini free tier (nothing was billed).
 | Hybrid + rerank vs embeddings-only retrieval (recall@10) | **pending**: needs relevance grades in `data/labels/pool.jsonl` (0 of 1,929 graded), then `make eval-retrieval` | [README: Retrieval evaluation](#retrieval-evaluation) |
 | Claim verification on vs off | off: groundedness 57.0% [42.5, 71.4] (about 43% of checkable claims unsupported); on: every failed claim removed or marked `[unverified]` (18-38% of draft claims failed in 3 live runs) | [eval_and_verification.md](eval/reports/eval_and_verification.md) |
 | Fine-tuned small verifier vs large model (vs teacher labels, 252 held-out pairs) | Qwen3-1.7B LoRA: accuracy 0.837 [0.790, 0.881], macro-F1 0.785, p95 714 ms, $0 per 1k claims; Gemini flash-lite: 0.885 [0.845, 0.921], 113 ms amortised, $0.215 per 1k; DeBERTa-v3-large NLI: 0.742 [0.687, 0.794] | [verifier_week7.md](eval/reports/verifier_week7.md) |
-| Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; on the smoke answers groundedness 0.570 -> 0.677 (+0.107 [+0.007, +0.197], p = 0.031) vs the NLI verifier | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
+| Verifier routing on vs off | at threshold 0.75: 8% of claims escalated, val accuracy 0.906 vs 0.893 all-Gemini, $0.017 vs $0.215 per 1k claims; re-scoring the same 50 smoke answers, the router judged more claims supported than the NLI verifier (groundedness 0.570 -> 0.677, +0.107 [+0.007, +0.197], p = 0.031); the answers did not change, so this measures the verifier, not answer quality | [verifier_week7.md](eval/reports/verifier_week7.md), [eval_and_verification.md](eval/reports/eval_and_verification.md) |
 | Prompt-injection defences on vs off (attack success rate) | **pending**: needs maintainer-written `eval/questions/injection.jsonl`, then `make eval-injection` | [security_week9.md](eval/reports/security_week9.md) |
 | Semantic cache on vs off (50 requests, replay at 0.1x recorded time) | p95 9.47 s -> 6.01 s, p50 1.22 s -> 42 ms, 68% hits, hit p95 57 ms (single run, no CI) | [serving_week8.md](eval/reports/serving_week8.md) |
 | Worker autoscaling (kind + KEDA, 10 replay jobs) | 1 -> 4 workers in 16 s, all jobs done in 75 s (one worker: ~200 s), back to 1 at 92 s | [serving_week8.md](eval/reports/serving_week8.md) |
@@ -109,7 +109,7 @@ Gemini free tier (nothing was billed).
 > Built a free-stack multi-agent biomedical research assistant (LangGraph, 5 MCP servers, Neo4j
 > knowledge graph) with claim-level verification: a LoRA-fine-tuned Qwen3-1.7B verifier reaches
 > 0.837 accuracy vs 0.885 for Gemini at $0 per claim, and a confidence router cuts verifier cost
-> to $0.017 per 1k claims while raising answer groundedness from 57% to 68% (p = 0.031); served
+> to $0.017 per 1k claims (vs $0.215 all-Gemini) at 0.906 validation accuracy; served
 > through FastAPI/Redis with KEDA autoscaling (1 -> 4 workers in 16 s), a semantic cache (p50
 > 1.2 s -> 42 ms on repeats) and OpenTelemetry tracing; prompt-injection attack success
 > [PENDING]%, retrieval recall@10 [PENDING].
