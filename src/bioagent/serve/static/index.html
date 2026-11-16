@@ -44,7 +44,8 @@ header h1{margin:0;padding:12px 16px;font:800 clamp(1.3rem,3.2vw,2rem)/1.05 var(
 header p{margin:0;padding:12px 16px;align-self:center;font:500 .8rem/1.4 var(--mono);text-transform:uppercase;
   letter-spacing:.08em;color:var(--muted);flex:1 1 260px}
 .grid{display:grid;grid-template-columns:330px minmax(0,1fr);gap:22px;counter-reset:panel}
-@media (max-width:860px){.grid{grid-template-columns:1fr;gap:18px}}
+.grid>*{min-width:0}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr);gap:18px}}
 .panel{background:var(--panel);border:var(--b) solid var(--line);box-shadow:var(--shadow);padding:0 14px 14px;margin-bottom:22px;counter-increment:panel}
 .panel h2{margin:0 -14px 12px;padding:6px 14px;background:var(--plate);color:var(--on-plate);
   font:700 .78rem/1.4 var(--mono);text-transform:uppercase;letter-spacing:.12em;display:flex;gap:10px}
