@@ -55,7 +55,10 @@ async def worker_main(settings: Settings, concurrency: int) -> None:
 
             worker = Worker(
                 queue,
-                replay_pipeline(settings.replay_seconds),
+                replay_pipeline(
+                    settings.replay_seconds,
+                    Path(settings.runs_dir) if settings.replay_saved_runs else None,
+                ),
                 cache,
                 max_attempts=attempts,
                 retry_base_s=retry_base,

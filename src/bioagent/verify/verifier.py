@@ -280,12 +280,13 @@ class ClaimVerifier:
         scores = [by_pair[pair] for pair in pairs]
         # per (claim, citation): best entailment window and highest contradiction
         best: dict[tuple[int, int], tuple[float, str]] = {}
-        contra: dict[tuple[int, int], float] = {}
+        contra: dict[tuple[int, int], tuple[float, str]] = {}
         for (claim, n, window), sc in zip(slots, scores, strict=True):
             key = (claim.n, n)
             if key not in best or sc.entailment > best[key][0]:
                 best[key] = (sc.entailment, window)
-            contra[key] = max(contra.get(key, 0.0), sc.contradiction)
+            if key not in contra or sc.contradiction > contra[key][0]:
+                contra[key] = (sc.contradiction, window)
         cfg = self.config
         for claim in pending_nli:
             rows: list[dict[str, Any]] = []
@@ -300,8 +301,9 @@ class ClaimVerifier:
                         "ref": _ref(e),
                         "source": e["source"],
                         "entailment": round(entail, 3),
-                        "contradiction": round(contra[(claim.n, n)], 3),
-                        "window": window[:240],
+                        "contradiction": round(contra[(claim.n, n)][0], 3),
+                        "window": window[:600],
+                        "contradiction_window": contra[(claim.n, n)][1][:600],
                     }
                 )
             claim.evidence = [*claim.evidence, *rows]

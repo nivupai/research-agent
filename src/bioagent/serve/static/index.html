@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BioResearch Agent</title>
+<style>
+:root{
+  /* palette: black, white, light grey, light blue only */
+  --black:#000000;--white:#ffffff;--grey:#e4e4e4;--blue:#b9dcff;
+  --bg:var(--grey);--panel:var(--white);--fg:var(--black);--muted:var(--black);--line:var(--black);--rule:var(--grey);
+  --acc:var(--blue);--on-acc:var(--black);--link:var(--black);--plate:var(--grey);--on-plate:var(--black);
+  --sup:var(--black);--sup-bg:var(--blue);--con:var(--white);--con-bg:var(--black);
+  --nei:var(--black);--nei-bg:var(--white);--cmp:var(--black);--cmp-bg:var(--grey);
+  --rem:var(--black);--rem-bg:var(--grey);--abs:var(--black);--abs-bg:var(--white);
+  --mark:var(--blue);--on-mark:var(--black);--chip:var(--black);--on-chip:var(--white);
+  --sel:var(--blue);--on-sel:var(--black);--surface:var(--white);
+  --shadow:0 1px 3px rgba(0,0,0,.14);--r:6px;--rs:4px;
+  --mono:"JetBrains Mono","IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --sans:"Helvetica Neue",Helvetica,Arial,"Liberation Sans",sans-serif;
+}
+@media (prefers-color-scheme:dark){:root{
+  /* dark mode: greys instead of pure black/white, a softer light blue, dark text on light fills */
+  --dk-bg:#1c1d1f;--dk-panel:#242527;--dk-plate:#2c2d30;--dk-fg:#d9dadc;--dk-muted:#9a9ca0;
+  --dk-line:#3a3b3f;--dk-chip:#c9cacc;--dk-blue:#8a9db0;
+  --bg:var(--dk-bg);--panel:var(--dk-panel);--surface:var(--dk-panel);
+  --fg:var(--dk-fg);--muted:var(--dk-muted);--line:var(--dk-line);--rule:var(--dk-line);
+  --acc:var(--dk-blue);--on-acc:var(--dk-bg);--sel:var(--dk-blue);--on-sel:var(--dk-bg);
+  --link:var(--dk-fg);--plate:var(--dk-plate);--on-plate:var(--dk-fg);
+  --sup:var(--dk-bg);--sup-bg:var(--dk-blue);--con:var(--dk-bg);--con-bg:var(--dk-chip);
+  --nei:var(--dk-fg);--nei-bg:var(--dk-panel);--cmp:var(--dk-fg);--cmp-bg:var(--dk-plate);
+  --rem:var(--dk-muted);--rem-bg:var(--dk-plate);--abs:var(--dk-fg);--abs-bg:var(--dk-panel);
+  --mark:var(--dk-blue);--on-mark:var(--dk-bg);--chip:var(--dk-chip);--on-chip:var(--dk-bg);
+  --shadow:none;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 var(--sans)}
+a{color:var(--link);text-decoration-thickness:1px;text-underline-offset:2px}
+a:hover{background:var(--acc);color:var(--on-acc)}
+button,input,textarea,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.wrap{max-width:1200px;margin:0 auto;padding:16px}
+header{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;margin:4px 0 20px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+header h1{margin:0;font:700 clamp(1.3rem,3vw,1.75rem)/1.15 var(--sans);letter-spacing:-.01em}
+header p{margin:0;font-size:.92rem;color:var(--muted)}
+.grid{display:grid;grid-template-columns:330px minmax(0,1fr);gap:20px;counter-reset:panel}
+.grid>*{min-width:0}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr);gap:16px}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);box-shadow:var(--shadow);
+  padding:0 14px 14px;margin-bottom:20px;counter-increment:panel;overflow:hidden}
+.panel h2{margin:0 -14px 12px;padding:7px 14px;background:var(--plate);color:var(--on-plate);border-bottom:1px solid var(--line);
+  font:600 .9rem/1.4 var(--sans);display:flex;gap:8px}
+.panel h2::before{content:counter(panel,decimal-leading-zero);font:500 .82rem/1.6 var(--mono)}
+textarea,input[type=password],input[type=text]{width:100%;border:1px solid var(--line);border-radius:var(--rs);background:var(--panel);padding:9px;font-size:.95rem}
+textarea{min-height:104px;resize:vertical}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-top:10px}
+.btn{border:1px solid var(--line);background:var(--acc);color:var(--on-acc);border-radius:var(--rs);padding:7px 18px;cursor:pointer;
+  font-weight:600;box-shadow:var(--shadow)}
+.btn:hover{filter:brightness(.96)}
+.btn:active{transform:translateY(1px);box-shadow:none}
+.btn.ghost{background:var(--panel);color:var(--fg)}
+.btn[disabled]{background:var(--rem-bg);color:var(--black);cursor:default;transform:none;box-shadow:none}
+.small{font-size:.85rem;line-height:1.45;color:var(--muted)}
+label.small{display:inline-flex;align-items:center;gap:6px}
+input[type=checkbox]{accent-color:var(--acc);width:16px;height:16px}
+details{margin-top:10px;border-top:1px solid var(--rule);padding-top:8px}
+details summary{cursor:pointer;font-size:.9rem;font-weight:600}
+.runs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:var(--rs)}
+.runs li+li{border-top:1px solid var(--rule)}
+.runs button{width:100%;text-align:left;background:var(--panel);border:0;padding:9px 10px;cursor:pointer}
+.runs button:hover{background:var(--bg)}
+.runs button[aria-current=true]{background:var(--sel);color:var(--on-sel)}
+.runs button[aria-current=true] .small{color:var(--on-sel)}
+.runs .q{display:block;font-weight:600;font-size:.92rem;margin-bottom:3px;line-height:1.3}
+.progress{list-style:none;margin:0;padding:0;font-size:.9rem;counter-reset:step}
+.progress li{counter-increment:step;padding:5px 0;border-bottom:1px solid var(--rule);display:flex;gap:10px}
+.progress li::before{content:counter(step,decimal-leading-zero);font:500 .8rem/1.7 var(--mono);color:var(--muted);min-width:22px}
+.progress .node{font-weight:600;min-width:92px}
+.progress li:last-child .node{background:var(--sel);color:var(--on-sel);padding:0 5px;border-radius:3px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:8px;margin:0 0 14px;padding:0;list-style:none}
+.stats li{padding:8px 10px;font-size:.8rem;color:var(--muted);border:1px solid var(--line);border-radius:var(--rs)}
+.stats b{display:block;font:600 1.3rem/1.2 var(--mono);color:var(--fg);letter-spacing:-.01em}
+.stats li:first-child{background:var(--sel)}.stats li:first-child,.stats li:first-child b{color:var(--on-sel)}
+#qtext{font-weight:600;font-size:1.05rem;line-height:1.35;color:var(--fg);margin:2px 0 12px}
+.answer{overflow-wrap:anywhere}
+.answer p{margin:.6em 0}.answer ul{padding-left:1.3em}
+.answer strong{font-weight:700}
+.cite{border:0;border-radius:3px;background:var(--chip);color:var(--on-chip);padding:0 4px;margin:0 2px;cursor:pointer;font:600 .72em/1.3 var(--mono);vertical-align:.12em}
+.cite:hover{background:var(--acc);color:var(--on-acc)}
+.flag{font-size:.75rem;padding:1px 6px;border-radius:3px;background:var(--panel);color:var(--fg);border:1px dashed var(--line);white-space:nowrap}
+table{width:100%;border-collapse:separate;border-spacing:0;font-size:.92rem;border:1px solid var(--line);border-radius:var(--rs);overflow:hidden}
+th,td{text-align:left;vertical-align:top;padding:8px;border-bottom:1px solid var(--rule)}
+tbody tr:last-child td{border-bottom:0}
+th{background:var(--plate);color:var(--on-plate);font-weight:600;font-size:.85rem;border-bottom:1px solid var(--line)}
+td:first-child,td:last-child{font-family:var(--mono);font-size:.84rem;white-space:nowrap}
+tbody tr:hover td{background:var(--bg)}
+.tablewrap{overflow-x:auto}
+.claimbtn{border:none;background:none;text-align:left;padding:0;cursor:pointer;color:inherit;font:inherit}
+.claimbtn:hover{text-decoration:underline}
+.badge{display:inline-block;font-size:.75rem;font-weight:600;padding:2px 7px;border-radius:999px;white-space:nowrap;border:1px solid var(--line)}
+.b-supported{color:var(--sup);background:var(--sup-bg)}.b-contradicted{color:var(--con);background:var(--con-bg)}
+.b-not_supported{color:var(--nei);background:var(--nei-bg);border-style:dashed}.b-computed{color:var(--cmp);background:var(--cmp-bg)}
+.b-removed{color:var(--rem);background:var(--rem-bg);text-decoration:line-through}.b-absence{color:var(--abs);background:var(--abs-bg)}
+.b-unchecked{color:var(--fg);background:var(--panel)}
+.refs{padding-left:2.2em;font-size:.9rem}
+.refs li{margin:6px 0;padding-left:4px}
+.refs li::marker{font:500 .8rem var(--mono)}
+dialog{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);color:var(--fg);width:min(780px,calc(100vw - 24px));
+  max-height:calc(100vh - 32px);padding:0;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+dialog::backdrop{background:rgba(0,0,0,.45)}
+.dlg-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;background:var(--plate);color:var(--on-plate);border-bottom:1px solid var(--line)}
+.dlg-head h3{font:600 1rem/1.3 var(--sans)!important}
+.dlg-head .small{color:var(--on-plate)}
+.dlg-body{padding:14px 16px;overflow:auto;max-height:calc(100vh - 140px)}
+.tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0}
+.tabs button{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:3px 12px;cursor:pointer;font:500 .82rem/1.3 var(--mono)}
+.tabs button[aria-selected=true]{background:var(--sel);color:var(--on-sel)}
+.passage{white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-left-width:4px;border-radius:var(--rs);padding:12px;font-size:.93rem;line-height:1.6}
+mark{background:var(--mark);color:var(--on-mark);padding:0 2px;border-radius:2px}
+.empty{font-size:.9rem;color:var(--muted)}
+.err{color:var(--fg);font-weight:600;border-left:3px solid var(--line);padding-left:6px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
+@media (prefers-reduced-motion:reduce){.btn{transition:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>BioResearch Agent</h1>
+  <p>Multi-agent biomedical answers with cited evidence and claim-level verification.</p>
+</header>
+<div class="grid">
+  <div>
+    <section class="panel" aria-labelledby="ask-h">
+      <h2 id="ask-h">Ask</h2>
+      <form id="ask">
+        <label class="sr" for="question">Question</label>
+        <textarea id="question" name="question" required minlength="5" maxlength="2000"
+          placeholder="e.g. What is the role of MGMT in temozolomide resistance in glioblastoma?"></textarea>
+        <div class="row">
+          <button class="btn" id="askbtn" type="submit">Ask</button>
+          <label class="small"><input type="checkbox" id="nocache"> skip cache</label>
+        </div>
+        <p class="small" id="askstatus" role="status" aria-live="polite"></p>
+      </form>
+      <details>
+        <summary>API key</summary>
+        <label class="small" for="apikey">Sent as X-API-Key; kept in this tab only.</label>
+        <input id="apikey" type="password" autocomplete="off">
+      </details>
+    </section>
+    <section class="panel" aria-labelledby="runs-h">
+      <h2 id="runs-h">Saved runs</h2>
+      <p class="small">Recorded answers; opening one makes no model calls.</p>
+      <ul class="runs" id="runs"><li class="empty">Loading…</li></ul>
+    </section>
+  </div>
+  <main>
+    <section class="panel" aria-labelledby="prog-h" id="progpanel" hidden>
+      <h2 id="prog-h">Progress</h2>
+      <ol class="progress" id="progress" aria-live="polite"></ol>
+    </section>
+    <section class="panel" aria-labelledby="ans-h">
+      <h2 id="ans-h">Answer</h2>
+      <p id="qtext" class="small"></p>
+      <ul class="stats" id="stats"></ul>
+      <div class="answer" id="answer"><p class="empty">Ask a question or open a saved run.</p></div>
+    </section>
+    <section class="panel" aria-labelledby="claims-h">
+      <h2 id="claims-h">Claims</h2>
+      <p class="small">Each claim in the answer, checked against the passages it cites. Select a claim to see its evidence.</p>
+      <div class="tablewrap"><table>
+        <thead><tr><th scope="col">#</th><th scope="col">Claim</th><th scope="col">Status</th><th scope="col">Cites</th></tr></thead>
+        <tbody id="claims"><tr><td colspan="4" class="empty">No claims yet.</td></tr></tbody>
+      </table></div>
+    </section>
+    <section class="panel" aria-labelledby="refs-h">
+      <h2 id="refs-h">References</h2>
+      <ol class="refs" id="refs"></ol>
+    </section>
+  </main>
+</div>
+</div>
+<dialog id="dlg" aria-labelledby="dlg-title">
+  <div class="dlg-head">
+    <div><h3 id="dlg-title" style="margin:0;font-size:1rem">Evidence</h3><div id="dlg-sub" class="small"></div></div>
+    <button class="btn ghost" id="dlg-close" type="button">Close</button>
+  </div>
+  <div class="dlg-body" id="dlg-body"></div>
+</dialog>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const LABEL = {supported:"supported", contradicted:"contradicted", not_supported:"not enough info",
+  computed:"computed", removed:"removed", absence:"absence check", unchecked:"unchecked"};
+let current = null;
+
+function el(tag, attrs = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") n.className = v; else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else if (v !== null && v !== undefined) n.setAttribute(k, v);
+  }
+  for (const k of kids.flat()) n.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return n;
+}
+function headers(json) {
+  const h = json ? {"content-type": "application/json"} : {};
+  let key = ""; try { key = sessionStorage.getItem("apikey") || ""; } catch (e) {}
+  if (key) h["X-API-Key"] = key;
+  return h;
+}
+async function api(path, opts = {}) {
+  const r = await fetch(path, {...opts, headers: {...headers(!!opts.body), ...(opts.headers || {})}});
+  if (!r.ok) {
+    let msg = r.status + " " + r.statusText;
+    try { const j = await r.json(); if (j.detail) msg = typeof j.detail === "string" ? j.detail : JSON.stringify(j.detail); } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+const fmt = {
+  pct: (v) => v == null ? "–" : Math.round(v * 100) + "%",
+  usd: (v) => v == null ? "–" : "$" + Number(v).toFixed(4),
+  secs: (v) => v == null ? "–" : Number(v).toFixed(1) + " s",
+};
+
+/* ---------- answer rendering (escaped text, light markdown, clickable citations) ---------- */
+function inline(text) {
+  const frag = document.createDocumentFragment();
+  const re = /\[(\d+(?:\s*[-,]\s*\d+)*)\]|\*\*([^*]+)\*\*|\[unverified\]|\$([^$\n]{1,80})\$|\*([^*\n]+)\*/g;
+  let last = 0, m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) frag.append(text.slice(last, m.index));
+    if (m[4] !== undefined) frag.append(el("em", {}, m[4]));
+    else if (m[3] !== undefined) frag.append(math(m[3]));
+    else if (m[0] === "[unverified]") frag.append(el("span", {class: "flag", title: "the verifier could not support this sentence"}, "unverified"));
+    else if (m[2]) frag.append(el("strong", {}, m[2]));
+    else {
+      // citation chips; the brackets stay in the text for copying, hidden visually
+      frag.append(el("span", {class: "sr"}, "["));
+      const nums = m[1].split(/\s*,\s*/);
+      nums.forEach((part, i) => {
+        const n = parseInt(part, 10);
+        frag.append(el("button", {class: "cite", type: "button", "aria-label": "reference " + part,
+          onclick: () => openReference(n)}, part));
+        if (i < nums.length - 1) frag.append(el("span", {class: "sr"}, ", "));
+      });
+      frag.append(el("span", {class: "sr"}, "]"));
+    }
+    last = re.lastIndex;
+  }
+  if (last < text.length) frag.append(text.slice(last));
+  return frag;
+}
+/* inline LaTeX the models emit, e.g. $O^6$-meG or $\text{AMPK-}\alpha1$: text, ^ and _ only */
+function math(tex) {
+  const greek = {alpha:"α", beta:"β", gamma:"γ", delta:"δ", kappa:"κ", mu:"μ", Delta:"Δ"};
+  let t = tex.replace(/\\text\{([^}]*)\}/g, "$1").replace(/\\([A-Za-z]+)/g, (_, g) => greek[g] || g);
+  const span = el("span", {class: "math"});
+  const re = /([\^_])(?:\{([^}]*)\}|(\S))/g;
+  let last = 0, m;
+  while ((m = re.exec(t))) {
+    if (m.index > last) span.append(t.slice(last, m.index));
+    span.append(el(m[1] === "^" ? "sup" : "sub", {}, m[2] ?? m[3]));
+    last = re.lastIndex;
+  }
+  span.append(t.slice(last));
+  return span;
+}
+function renderAnswer(md) {
+  const box = $("answer"); box.replaceChildren();
+  let list = null;
+  for (const raw of String(md || "").split("\n")) {
+    const line = raw.trim();
+    if (!line) { list = null; continue; }
+    const bullet = line.match(/^(?:[-*]|\d+\.)\s+(.*)$/);
+    const heading = line.match(/^#{1,4}\s+(.*)$/);
+    if (bullet) {
+      if (!list) { list = el("ul"); box.append(list); }
+      list.append(el("li", {}, inline(bullet[1])));
+    } else {
+      list = null;
+      box.append(heading ? el("p", {}, el("strong", {}, inline(heading[1]))) : el("p", {}, inline(line)));
+    }
+  }
+}
+function renderStats(result, summary) {
+  const s = summary || {}, st = (result && result.stats) || {};
+  const items = [
+    ["groundedness", fmt.pct(s.groundedness ?? result.groundedness)],
+    ["claims", (result.claims || []).length],
+    ["LLM calls", s.llm_calls ?? st.llm_calls ?? "–"],
+    ["tool calls", s.tool_calls ?? st.tool_calls ?? "–"],
+    ["latency", fmt.secs(s.wall_seconds ?? st.wall_seconds)],
+    ["cost (list price)", fmt.usd(s.cost_usd ?? st.cost_usd)],
+  ];
+  $("stats").replaceChildren(...items.map(([k, v]) => el("li", {}, el("b", {}, String(v)), k)));
+}
+function renderClaims(result) {
+  const body = $("claims"); body.replaceChildren();
+  const claims = result.claims || [];
+  if (!claims.length) { body.append(el("tr", {}, el("td", {colspan: 4, class: "empty"}, "This answer has no checked claims."))); return; }
+  for (const c of claims) {
+    const status = c.status || c.label || "unchecked";
+    body.append(el("tr", {},
+      el("td", {}, String(c.n)),
+      el("td", {}, el("button", {class: "claimbtn", type: "button", onclick: () => openClaim(c)}, c.claim)),
+      el("td", {}, el("span", {class: "badge b-" + status, title: c.check || ""}, LABEL[status] || status)),
+      el("td", {}, (c.citations || []).join(", ") || "–"),
+    ));
+  }
+}
+function renderRefs(result) {
+  $("refs").replaceChildren(...(result.citations || []).map((c) =>
+    el("li", {id: "ref-" + c.n, value: c.n},
+      c.title || c.key || "", " ", c.year ? "(" + c.year + ") " : "",
+      c.url ? el("a", {href: c.url, target: "_blank", rel: "noopener"}, c.pmid ? "PMID " + c.pmid : "link") : "",
+      c.computed ? " · computed" : "")));
+}
+function render(result, summary, question) {
+  current = result;
+  $("qtext").textContent = (question || result.question || "") +
+    (result.replayed_from ? "  (replayed from saved run " + result.replayed_from + ")" : "");
+  renderStats(result, summary); renderAnswer(result.answer); renderClaims(result); renderRefs(result);
+}
+
+/* ---------- evidence dialog with the verifier's window highlighted ---------- */
+function norm(s) { return String(s || "").replace(/\s+/g, " ").trim(); }
+function highlighted(passage, windowText) {
+  const text = norm(passage), win = norm(windowText).replace(/…$/, "");
+  const frag = document.createDocumentFragment();
+  let start = -1, len = 0;
+  for (const probe of [win, win.slice(0, 160), win.slice(0, 80)]) {
+    if (probe.length < 20) continue;
+    start = text.indexOf(probe);
+    if (start >= 0) { len = probe === win ? win.length : Math.min(text.length - start, win.length); break; }
+  }
+  if (start >= 0 && win.length >= 235) {  // windows stored cut at 240 chars: finish the sentence
+    const end = text.slice(start + len).search(/[.!?](\s|$)/);
+    if (end >= 0 && end < 400) len += end + 1;
+  }
+  if (start < 0) { frag.append(text); return [frag, false]; }
+  frag.append(text.slice(0, start), el("mark", {}, text.slice(start, start + len)), text.slice(start + len));
+  return [frag, true];
+}
+function showEvidence(claim, cite) {
+  const body = $("dlg-body"); body.replaceChildren();
+  const status = claim.status || claim.label || "unchecked";
+  body.append(el("p", {}, el("span", {class: "badge b-" + status}, LABEL[status] || status), " ", claim.claim));
+  if (claim.check) body.append(el("p", {class: "small"}, "Verifier: " + claim.check));
+  const cites = claim.citations || [];
+  if (cites.length > 1) {
+    body.append(el("div", {class: "tabs", role: "tablist", "aria-label": "cited passages"},
+      cites.map((n) => el("button", {type: "button", role: "tab", "aria-selected": n === cite ? "true" : "false",
+        onclick: () => showEvidence(claim, n)}, "[" + n + "]"))));
+  }
+  const passage = (current.passages || {})[String(cite)];
+  const ev = (claim.evidence || []).find((e) => e.cite === cite);
+  const ref = (current.citations || []).find((c) => c.n === cite) || {};
+  if (ev && (ev.entailment != null || ev.contradiction != null)) {
+    body.append(el("p", {class: "small"}, "Best window for [" + cite + "]: entailment " +
+      (ev.entailment ?? "–") + ", contradiction " + (ev.contradiction ?? "–")));
+  }
+  // contradicted claims: highlight the most contradicting window when the run recorded it
+  const contra = status === "contradicted" || status === "removed";
+  const win = ev ? ((contra && ev.contradiction_window) || ev.window) : null;
+  if (ev && win) {
+    body.append(el("p", {class: "small"}, ev.contradiction_window && contra
+      ? "Highlighted: the passage window that most contradicts the claim."
+      : contra ? "Highlighted: the best-supporting window (this run did not record the contradicting window)."
+               : "Highlighted: the passage window that best supports the claim."));
+  }
+  if (passage) {
+    const [frag, found] = highlighted(passage.text, win);
+    body.append(el("div", {class: "passage"}, frag));
+    if (!found && win) body.append(el("p", {class: "small"}, "Evidence window: " + win));
+  } else if (win) {
+    body.append(el("div", {class: "passage"}, el("mark", {}, win)));
+  } else {
+    body.append(el("p", {class: "empty"}, "No passage text stored for [" + cite + "] (e.g. a computed result or a removed citation)."));
+  }
+  if (ref.url) body.append(el("p", {}, el("a", {href: ref.url, target: "_blank", rel: "noopener"},
+    "Open " + (ref.pmid ? "PMID " + ref.pmid : "source") + " ↗")));
+  $("dlg-title").textContent = "Claim " + claim.n;
+  $("dlg-sub").textContent = ref.title || "";
+}
+function openClaim(claim) {
+  const cites = claim.citations || [];
+  // open on the passage that decided the label: most contradicting for a contradiction
+  const key = (claim.status === "contradicted" || claim.label === "contradicted") ? "contradiction" : "entailment";
+  const best = (claim.evidence || []).slice().sort((a, b) => (b[key] || 0) - (a[key] || 0))[0];
+  showEvidence(claim, best ? best.cite : cites[0]);
+  $("dlg").showModal();
+}
+function openReference(n) {
+  if (!current) return;
+  const claim = (current.claims || []).find((c) => (c.citations || []).includes(n));
+  if (claim) { showEvidence(claim, n); $("dlg").showModal(); return; }
+  const li = $("ref-" + n); if (li) { li.scrollIntoView({behavior: "smooth", block: "center"}); }
+}
+$("dlg-close").addEventListener("click", () => $("dlg").close());
+
+/* ---------- saved runs ---------- */
+async function loadRuns() {
+  const list = $("runs");
+  try {
+    const {runs} = await api("/v1/runs");
+    list.replaceChildren();
+    if (!runs.length) { list.append(el("li", {class: "empty"}, "No saved runs in RUNS_DIR.")); return; }
+    for (const r of runs) {
+      list.append(el("li", {}, el("button", {type: "button", "data-run": r.run_id, onclick: () => openRun(r.run_id)},
+        el("span", {class: "q"}, r.question),
+        el("span", {class: "small"}, (r.started_at || r.run_id).slice(0, 10) + " · " + r.claims + " claims · grounded " + fmt.pct(r.groundedness)))));
+    }
+  } catch (e) { list.replaceChildren(el("li", {class: "err"}, "Could not load saved runs: " + e.message)); }
+}
+async function openRun(id, claimN) {
+  for (const b of document.querySelectorAll("#runs button")) b.setAttribute("aria-current", b.dataset.run === id ? "true" : "false");
+  $("progpanel").hidden = true;
+  try {
+    const run = await api("/v1/runs/" + encodeURIComponent(id)); render(run.result, run.summary);
+    const params = new URLSearchParams(location.search); params.set("run", id); params.delete("claim");
+    history.replaceState(null, "", "?" + params.toString());
+    const claim = claimN && (run.result.claims || []).find((c) => String(c.n) === String(claimN));
+    if (claim) openClaim(claim);
+  } catch (e) { $("answer").replaceChildren(el("p", {class: "err"}, "Could not load run: " + e.message)); }
+}
+
+/* ---------- asking: POST, then stream progress (fetch-based SSE so the API key header works) ---------- */
+function describe(ev) {
+  if (ev.type === "queued") return ["queue", "waiting for a worker"];
+  if (ev.type === "running") return ["worker", "started (attempt " + (ev.attempt || 1) + ")"];
+  if (ev.type === "retrying") return ["worker", "retrying: " + (ev.error || "")];
+  if (ev.type === "failed") return ["failed", ev.error || "the job failed"];
+  if (ev.type === "final") return ["done", ev.cached ? "served from the semantic cache" : "answer ready"];
+  const node = ev.node || "step";
+  if (ev.plan) return [node, ev.plan.length + " task(s): " + ev.plan.map((t) => t.kind).join(", ")];
+  if (ev.tool) return [node, ev.tool + (ev.ok === false ? " (error)" : "") + (ev.latency_ms ? " · " + ev.latency_ms + " ms" : "")];
+  if (ev.task_id) return [node, "task " + ev.task_id + ": " + (ev.status || "") + (ev.evidence != null ? ", " + ev.evidence + " evidence items" : "")];
+  if (node === "synthesizer") return [node, (ev.citations ?? "?") + " citations"];
+  if (node === "verifier") return [node, (ev.claims ?? "?") + " claims, groundedness " + fmt.pct(ev.groundedness)];
+  return [node, ev.replay ? "replayed step" : "done"];
+}
+function addProgress(ev) {
+  const [node, text] = describe(ev);
+  $("progress").append(el("li", {}, el("span", {class: "node"}, node), el("span", {}, text)));
+}
+async function streamJob(job) {
+  const r = await fetch(job.events_url, {headers: headers(false)});
+  if (!r.ok || !r.body) throw new Error("event stream: " + r.status);
+  const reader = r.body.getReader(), dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const {value, done} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream: true});
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const chunk = buf.slice(0, i); buf = buf.slice(i + 2);
+      const data = chunk.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).join("\n");
+      if (!data) continue;
+      const ev = JSON.parse(data);
+      addProgress(ev);
+      if (ev.type === "final") { reader.cancel(); return ev; }
+      if (ev.type === "failed") { reader.cancel(); throw new Error(ev.error || "job failed"); }
+    }
+  }
+  throw new Error("the event stream ended without an answer");
+}
+$("ask").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const question = $("question").value.trim();
+  if (question.length < 5) return;
+  $("askbtn").disabled = true; $("askstatus").textContent = "Submitting…";
+  $("progress").replaceChildren(); $("progpanel").hidden = false;
+  try {
+    const job = await api("/v1/ask", {method: "POST", body: JSON.stringify({question, no_cache: $("nocache").checked})});
+    $("askstatus").textContent = job.cached ? "Cache hit." : "Queued as " + job.job_id + ".";
+    const final = await streamJob(job);
+    render(final.result, final.summary, question);
+    $("askstatus").textContent = "Done.";
+  } catch (err) {
+    $("askstatus").replaceChildren(el("span", {class: "err"}, String(err.message || err)));
+  } finally { $("askbtn").disabled = false; }
+});
+try { $("apikey").value = sessionStorage.getItem("apikey") || ""; } catch (e) {}
+$("apikey").addEventListener("change", () => {
+  try { sessionStorage.setItem("apikey", $("apikey").value); } catch (e) {}
+  loadRuns();
+});
+loadRuns().then(() => {  // ?run=<id>&claim=<n> opens a saved run (and a claim's evidence)
+  const params = new URLSearchParams(location.search);
+  if (params.get("run")) openRun(params.get("run"), params.get("claim"));
+});
+</script>
+</body>
+</html>

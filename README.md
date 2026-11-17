@@ -450,6 +450,43 @@ notebook (4-bit) is the practical path for the full model.
   `results/verifier/eval.md`; 0.75 is the knee of that curve (about 31% of claims escalated,
   ~3 points below all-LLM accuracy at ~30% of the cost; see `eval/reports/verifier_week7.md`).
 
+## Web UI (`/ui`)
+
+![Answer, run stats and citations for a saved run](docs/img/ui-answer.png)
+
+A single page served by the API at **http://127.0.0.1:8000/ui** (static HTML and JavaScript,
+no build step, no external libraries):
+
+* **Ask**: posts to `POST /v1/ask` and streams progress from the job's SSE endpoint (planner
+  plan, each tool call, synthesizer, verifier), then renders the answer with clickable
+  numbered citations, `[unverified]` flags, run stats (groundedness, LLM and tool calls,
+  latency, list-price cost), the claim table and the reference list.
+* **Claim evidence**: selecting a claim (or a citation) opens the cited passage with the
+  verifier's window highlighted: the best-supporting window, or for a contradicted claim the
+  most contradicting one (recorded by runs from now on; older runs show the best-supporting
+  window and say so), the entailment/contradiction scores and a PubMed link.
+* **Saved runs**: `GET /v1/runs` lists the records in `RUNS_DIR` (default `results/runs`) and
+  `GET /v1/runs/{run_id}` returns one in the shape of a completed job, so recorded answers can
+  be browsed with no quota. `?run=<id>&claim=<n>` links straight to a run and a claim.
+* **Replay demo**: with `WORKER_PIPELINE=replay` the worker replays a saved run whose
+  question matches the one asked (same events, paced over `REPLAY_SECONDS`), so the live
+  view can be shown without any model call; unmatched questions get the fixed test answer.
+* Light and dark themes, single column on narrow screens, keyboard and screen-reader
+  friendly (native buttons and dialog, live region for progress). If `API_KEY` is set, enter
+  it under "API key"; it is kept in the browser tab's session storage and sent as
+  `X-API-Key`; nothing secret is in the page.
+
+```bash
+make serve-deps                                  # Redis (+ Jaeger) in containers
+SEMANTIC_CACHE_ENABLED=false make serve-api      # http://127.0.0.1:8000/ui
+WORKER_PIPELINE=replay REPLAY_SECONDS=8 make serve-worker   # demo, no model calls
+# or a real worker (spends LLM quota):              make serve-worker
+```
+
+| claim evidence (contradicted claim) | dark theme | narrow screen |
+|---|---|---|
+| ![evidence dialog](docs/img/ui-evidence.png) | ![dark theme](docs/img/ui-claims-dark.png) | ![narrow screen](docs/img/ui-mobile.png) |
+
 ## Serving: API, queue, worker, cache and tracing (`bioagent.serve`)
 
 ```bash
@@ -467,6 +504,7 @@ curl -N localhost:8000/v1/jobs/<job_id>/events    # SSE progress, then the final
   references, claim table, plan) and a per-query cost/latency summary;
   `GET /v1/jobs/{id}/events` streams Server-Sent Events: `queued`, `running`, `progress`
   (one per graph node: plan, each task's result, verification), `retrying`, `final`.
+  `GET /v1/runs` and `/v1/runs/{id}` serve saved runs and `/ui` the web UI (above).
   `/healthz`, `/readyz` (Redis), `/metrics` (Prometheus). Optional `API_KEY` (send
   `X-API-Key`); per-client token bucket (`RATE_LIMIT_PER_MINUTE`, `RATE_LIMIT_BURST`) -> 429.
 * **Queue and worker**: Redis list + delayed set + per-job event streams. `bioagent worker`

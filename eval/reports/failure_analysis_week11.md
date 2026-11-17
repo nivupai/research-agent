@@ -373,3 +373,29 @@ questions with and without fusion as an overfitting check.
 
 Not resumed: `full-v1` is still at 65 of 188 (computed and corpus done; false premise,
 PubMedQA and unanswerable remain). `make eval-full RESUME=full-v1` after the next reset.
+
+## 10. Runs of 2026-11-16 (after the reset)
+
+**PubMedQA variants, held-out 30 items** (`pubmedqa-ab`; paired against the flash-lite
+baseline, 56.7% [40.0, 73.3]):
+
+| variant | items | accuracy | paired delta [95% CI], p | gold yes / no / maybe (baseline -> variant) | other |
+|---|---|---|---|---|---|
+| results-first prompt (`SYNTH_VARIANT=results_first`) | 30/30 | 60.0% [40.0, 76.7] | +0.033 [-0.100, +0.167], p = 1.0 | 11 -> 11 of 12 / 5 -> 7 of 12 / 1 -> 0 of 6 | 2 answers with no yes/no/maybe label |
+| flash synthesizer | 26/30 (flash quota) | 53.8% on 26 | +0.000 [-0.115, +0.115], p = 1.0 | 9 -> 9 of 9 / 4 -> 5 of 11 / 1 -> 0 of 5 | latency +21 s [+2, +40], p = 0.04 |
+
+Neither is adopted: results-first helps on gold "no" items (+2 of 12) but loses the one
+"maybe" and leaves 2 answers unlabelled, and the overall change is not significant; the
+flash synthesizer changes nothing on accuracy and is slower.
+
+**Sorafenib live comparison**: not run. Each `bioagent ask` failed at once with a flash 429:
+the default agent uses flash for the planner and synthesizer, and the flash daily quota had
+already been spent by the PubMedQA flash variant. Needs a day where flash is reserved for it
+(about 8 questions), or a flash-lite-only rerun of the comparison.
+
+**Full eval `full-v1`**: 110 of 188 done (45 new today: 11 false-premise, 33 PubMedQA and
+one more); paused on the flash-lite quota. Partial results (110 items): accuracy 81.8%
+[74.5, 88.2]; computed 100% (n = 6), corpus 90.0% [83.3, 95.8] (n = 60), false premise
+corrected 100% (n = 11), PubMedQA 57.6% [39.4, 72.8] (n = 33); citation support 66.4%,
+groundedness 59.1%, 27.9 s and $0.0108 (list-price equivalent) per question. Remaining: 67
+PubMedQA and 11 unanswerable items (`make eval-full RESUME=full-v1`).

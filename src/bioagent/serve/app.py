@@ -3,6 +3,9 @@
 POST /v1/ask            -> 202 + job id (or an immediately completed job on a cache hit)
 GET  /v1/jobs/{id}      -> status, result, per-query cost/latency summary
 GET  /v1/jobs/{id}/events -> text/event-stream: queued, running, progress, retrying, final
+GET  /v1/runs            -> saved runs (newest first) for the UI gallery
+GET  /v1/runs/{run_id}   -> a saved run in the shape of a completed job
+GET  /ui                 -> the single-page UI (static; data calls send X-API-Key if set)
 GET  /healthz /readyz /metrics
 """
 
@@ -13,10 +16,18 @@ import json
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from importlib.resources import files
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.responses import JSONResponse, PlainTextResponse, StreamingResponse
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from redis.asyncio import Redis
 
@@ -34,6 +45,8 @@ from bioagent.telemetry import (
     inject_context,
     span,
 )
+
+UI_PAGE = files("bioagent.serve").joinpath("static/index.html").read_text(encoding="utf-8")
 
 
 def create_app(
@@ -184,6 +197,29 @@ def create_app(
         return StreamingResponse(
             stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache"}
         )
+
+    @app.get("/v1/runs")
+    async def saved_runs(_key: str | None = Depends(authorise)) -> dict[str, Any]:
+        from bioagent.serve.runs import list_runs
+
+        return {"runs": list_runs(Path(settings.runs_dir))}
+
+    @app.get("/v1/runs/{run_id}")
+    async def saved_run(run_id: str, _key: str | None = Depends(authorise)) -> dict[str, Any]:
+        from bioagent.serve.runs import load_run
+
+        run = load_run(Path(settings.runs_dir), run_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="unknown run")
+        return run
+
+    @app.get("/ui", response_class=HTMLResponse)
+    async def ui() -> HTMLResponse:
+        return HTMLResponse(UI_PAGE, headers={"Cache-Control": "no-cache"})
+
+    @app.get("/", include_in_schema=False)
+    async def root() -> RedirectResponse:
+        return RedirectResponse("/ui")
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
