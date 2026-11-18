@@ -430,3 +430,45 @@ smoke subset (50.0%); the CIs overlap. Remaining: 8 unanswerable items.
 * Flash's free daily limit is small: the planner and synthesizer use flash, and it ran out
   after about 2-3 agent questions. The comparison may need a flash-lite planner/synthesizer
   (`PLANNER_MODEL`/`SYNTH_MODEL`) to finish in one day.
+
+## 12. Runs of 2026-11-18: full eval complete, sorafenib fusion (live)
+
+**Full eval `full-v1`: complete, 188 of 188** (flash-lite in every role, defences on, 1 repeat).
+Accuracy **78.7% [72.9, 84.6]**; citation support 63.2% [58.3, 68.3]; groundedness 54.0%
+[49.0, 59.1]; 30.3 s [26.4, 34.4] and $0.0104 (list-price equivalent; free tier) per question.
+
+| category | n | accuracy [95% CI] | other |
+|---|---|---|---|
+| computed | 6 | 100.0% | |
+| corpus | 60 | 90.0% [83.3, 95.8] | gold-PMID recall 100% |
+| false premise | 11 | 100.0% (premise corrected) | |
+| PubMedQA | 100 | 66.0% [57.0, 75.0] | gold-PMID recall 94.0% |
+| unanswerable | 11 | 100.0% (abstained) | |
+
+**Bug found: shell settings did not reach the MCP servers.** The retrieval server runs as an
+MCP subprocess; when a server had no per-server overrides it was started with the MCP
+client's minimal default environment (PATH, HOME, ...), so a setting exported in the shell
+(`RERANK_FUSION=true`) never reached it (`.env` values did, because the servers read that
+file). The first fusion runs this morning (and on 2026-11-17) therefore ran *without*
+fusion. Fixed: `bioagent.agents.tools.server_environment` forwards this process's bioagent
+settings variables (only names of `Settings` fields) to every server; test added.
+
+**Sorafenib, live (flash-lite in every role, one run per cell)**:
+
+| question | run | key sorafenib paper 28625738 in evidence | sorafenib in answer | references | groundedness | drugs named |
+|---|---|---|---|---|---|---|
+| AMPK / glioblastoma | baseline | no | no | 7 | 0.50 | metformin, aspirin |
+| AMPK / glioblastoma | fusion (fixed) | **yes** | no | 15 | 0.63 | metformin |
+| mTOR / glioblastoma | baseline | no | no | 11 | 0.50 | rapamycin/sirolimus, everolimus, metformin |
+| mTOR / glioblastoma | fusion (fixed) | no | no | 14 | 0.50 | + temsirolimus, alpelisib, phenformin |
+| PI3K / breast cancer | baseline | no | no | 2 | 0.25 | alpelisib |
+| PI3K / breast cancer | fusion (fixed) | no | no | 7 | 0.30 | + idelalisib, copanlisib, duvelisib, inavolisib, everolimus, sirolimus |
+
+Reading: with fusion actually on, the AMPK run now retrieves the sorafenib paper, as the
+offline ranking predicted (rank 25 -> 8), but the answer still does not name sorafenib, so
+the next bottleneck is after retrieval (the drug-candidate merge, which ranks by paper count
+and keeps 20, or the synthesizer's evidence budget). Fusion runs had more references in all
+three questions, but with one run per cell and run-to-run variation as large as this (the
+two invalid "fusion" runs, which were really baselines, also named more drugs for PI3K),
+no effect on answer quality can be claimed. `RERANK_FUSION` stays off by default. Next:
+inspect the AMPK fusion run's candidate list, and run 3+ repeats per cell before deciding.
