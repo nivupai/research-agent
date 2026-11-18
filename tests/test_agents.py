@@ -633,3 +633,15 @@ async def test_per_specialist_model_override(tmp_path: Path) -> None:
     state = await run_graph(deps, tmp_path)
     assert state["results"]["t1"]["summary"] == "literature notes"
     assert state["results"]["t2"]["summary"] == "chemistry notes"
+
+
+def test_mcp_server_environment_forwards_bioagent_settings(monkeypatch: Any) -> None:
+    from bioagent.agents.tools import server_environment
+
+    monkeypatch.setenv("RERANK_FUSION", "true")
+    monkeypatch.setenv("SOME_UNRELATED_SECRET", "x")
+    env = server_environment({"FORCE_SEARCH_MODE": "bm25"})
+    assert env["RERANK_FUSION"] == "true"  # a Settings field: forwarded
+    assert "SOME_UNRELATED_SECRET" not in env  # not ours: not forwarded
+    assert env["FORCE_SEARCH_MODE"] == "bm25"  # per-server override wins
+    assert "PATH" in env
