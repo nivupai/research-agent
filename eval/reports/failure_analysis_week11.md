@@ -399,3 +399,34 @@ one more); paused on the flash-lite quota. Partial results (110 items): accuracy
 corrected 100% (n = 11), PubMedQA 57.6% [39.4, 72.8] (n = 33); citation support 66.4%,
 groundedness 59.1%, 27.9 s and $0.0108 (list-price equivalent) per question. Remaining: 67
 PubMedQA and 11 unanswerable items (`make eval-full RESUME=full-v1`).
+
+## 11. Runs of 2026-11-17 (after the reset)
+
+**Full eval `full-v1`: 180 of 188** (70 more; paused on the flash-lite daily quota). Accuracy
+77.8% [72.2, 83.6] over 180 items:
+
+| category | n | accuracy [95% CI] | other |
+|---|---|---|---|
+| computed | 6 | 100.0% [100.0, 100.0] | |
+| corpus | 60 | 90.0% [83.3, 95.8] | gold-PMID recall 100% |
+| false premise | 11 | 100.0% (premise corrected) | |
+| PubMedQA | 100 (complete) | 66.0% [57.0, 75.0] | gold-PMID recall 94.0% |
+| unanswerable | 3 of 11 | 100.0% abstained | |
+
+PubMedQA on all 100 items (66.0%) is higher than the 30-item held-out set (56.7%) and the
+smoke subset (50.0%); the CIs overlap. Remaining: 8 unanswerable items.
+
+**Sorafenib live comparison: 2 of 8 questions completed.**
+
+* AMPK baseline (run 20261117-210922-ee4f6c): drugs named metformin, phenformin, berberine,
+  aspirin/salicylate, rosiglitazone; no sorafenib, cites neither 28625738 nor 25080865.
+* AMPK with `DISCOVERY_K=25` (run 20261117-211128-c2e262): only metformin named; no sorafenib.
+* `RERANK_FUSION=true` (AMPK) failed on a Gemini flash **503 "model is currently experiencing
+  high demand"** after 5 retries (transient, provider side). The other five (fusion + k25,
+  mTOR and PI3K with and without fusion) stopped on the flash **daily quota (429)**. No bug in
+  the fusion path; the `KeyError: '__import__'` lines in the logs are interpreter-shutdown
+  noise from an un-awaited HTTP coroutine. The live effect of fusion is still unmeasured;
+  offline it lifts 28625738 from rank 25 to 8.
+* Flash's free daily limit is small: the planner and synthesizer use flash, and it ran out
+  after about 2-3 agent questions. The comparison may need a flash-lite planner/synthesizer
+  (`PLANNER_MODEL`/`SYNTH_MODEL`) to finish in one day.
