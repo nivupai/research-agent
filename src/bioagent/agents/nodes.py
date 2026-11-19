@@ -6,7 +6,7 @@ import asyncio
 import itertools
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -82,6 +82,7 @@ class AgentDeps:
     synth_variant: str = "default"
     discovery_k: int = 15  # = DISCOVERY_K (defined below)
     discovery_min_evidence: int = 2
+    drug_candidate_ranking: str = "count"
     sleep: Callable[[float], Awaitable[None]] | None = None
     # Per-specialist model overrides (e.g. a stronger model for literature only).
     specialists: dict[str, RoleModel] = field(default_factory=dict)
@@ -312,12 +313,34 @@ async def _run_tool(
     return result
 
 
+PAPER_RANK_K = 10  # reciprocal-rank constant for DRUG_CANDIDATE_RANKING=paper_rank
+
+
+def hit_ranks(results: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Best (lowest, 1-based) rank of each PMID across several search_corpus results."""
+    best: dict[str, int] = {}
+    for result in results:
+        pmids = list(dict.fromkeys(str(h["pmid"]) for h in result.get("hits", [])))
+        for rank, pmid in enumerate(pmids, start=1):
+            best[pmid] = min(best.get(pmid, rank), rank)
+    return best
+
+
 def merge_candidates(
     graph_result: Mapping[str, Any],
     mentioned_result: Mapping[str, Any],
     approved_only: bool = False,
+    ranking: str = "count",
+    paper_ranks: Mapping[str, int] | None = None,
 ) -> list[dict[str, Any]]:
-    """Union of graph drugs_targeting hits and drugs annotated in the corpus hits."""
+    """Union of graph drugs_targeting hits and drugs annotated in the corpus hits.
+
+    ``ranking="count"`` (default) orders corpus-only candidates by how many retrieved papers
+    mention them. ``ranking="paper_rank"`` orders them by the summed reciprocal rank
+    (1 / (PAPER_RANK_K + rank)) of the retrieved papers that mention them, using
+    ``paper_ranks`` (best search rank per PMID), so a drug named in a top-ranked paper is
+    not crowded out by entities that are merely mentioned often. The cap is the same.
+    """
     merged: dict[str, dict[str, Any]] = {}
     for item in graph_result.get("results", []):
         drug = item["drug"]
@@ -339,6 +362,9 @@ def merge_candidates(
         )  # fmt: skip
         entry["sources"].add("corpus")
         entry["corpus_papers"] = int(drug.get("papers_in_query") or 0)
+        if ranking == "paper_rank" and paper_ranks:
+            ranks = [paper_ranks[str(p)] for p in drug.get("pmids", []) if str(p) in paper_ranks]
+            entry["paper_score"] = round(sum(1 / (PAPER_RANK_K + r) for r in ranks), 6)
 
     def weight(e: dict[str, Any]) -> int:
         return -(int(e["corpus_papers"]) + int(e["graph_evidence"]))
@@ -346,7 +372,14 @@ def merge_candidates(
     both = sorted((e for e in merged.values() if len(e["sources"]) > 1), key=weight)
     graph_only = sorted((e for e in merged.values() if e["sources"] != {"corpus"}
                          and len(e["sources"]) == 1), key=weight)  # fmt: skip
-    corpus_only = sorted((e for e in merged.values() if e["sources"] == {"corpus"}), key=weight)
+
+    def corpus_key(e: dict[str, Any]) -> tuple[float, int]:
+        return (-float(e.get("paper_score", 0.0)), weight(e))
+
+    corpus_only = sorted(
+        (e for e in merged.values() if e["sources"] == {"corpus"}),
+        key=corpus_key if ranking == "paper_rank" else weight,
+    )
     ranked = both + [
         e for pair in itertools.zip_longest(graph_only, corpus_only) for e in pair if e
     ]
@@ -359,6 +392,7 @@ async def discover_drugs(
     stats: RunStatsCollector,
     k: int = DISCOVERY_K,
     min_evidence: int = 2,
+    ranking: str = "count",
 ) -> Discovery:
     """Always run drugs_targeting plus the discovery corpus searches for a drug_target task.
 
@@ -403,8 +437,13 @@ async def discover_drugs(
             wrap_untrusted(render_for_model(name, result, items), source=name, ref=task.id)
         )
     graph_result = results[0] if "error" not in results[0] else {}
+    searches = [r for (n, _), r in zip(calls, results, strict=False) if n == "search_corpus"]
     candidates = merge_candidates(
-        graph_result, mentioned if "error" not in mentioned else {}, task.approved_only
+        graph_result,
+        mentioned if "error" not in mentioned else {},
+        task.approved_only,
+        ranking=ranking,
+        paper_ranks=hit_ranks(searches) if ranking == "paper_rank" else None,
     )
     listing = "; ".join(
         f"{c['name']} ({'+'.join(c['sources'])}"
@@ -456,7 +495,12 @@ def make_specialist(
         discovery: Discovery | None = None
         if kind == "literature" and task.drug_target and set(tools) >= DISCOVERY_TOOLS:
             discovery = await discover_drugs(
-                task, tools, stats, deps.discovery_k, deps.discovery_min_evidence
+                task,
+                tools,
+                stats,
+                deps.discovery_k,
+                deps.discovery_min_evidence,
+                deps.drug_candidate_ranking,
             )
             evidence.update(discovery.evidence)
             ctx.observe(discovery.prompt)
