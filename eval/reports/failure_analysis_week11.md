@@ -533,3 +533,38 @@ measure significantly, never gets sorafenib into an answer (section 13: it is cu
 sorafenib has to be in the candidate selection (section 13 options), not in retrieval.
 Earlier note: an aborted first launch this morning ran one question while Docker Desktop (and
 so Neo4j) was down; it was discarded and the job restarted after Neo4j was back.
+
+## 15. Ranking drug candidates by paper rank (2026-11-19): does not recover sorafenib
+
+`DRUG_CANDIDATE_RANKING=paper_rank` (new, default `count`): corpus-only candidates are
+ordered by the summed reciprocal rank, 1 / (10 + rank), of the discovery-search hits that
+mention them instead of by how many hits mention them; the 20-candidate cap is unchanged.
+Unit-tested (a drug named only in a top-ranked hit survives the cap; count mode unchanged).
+
+**Endogenous entities**: the graph has no flag that separates drugs from metabolites. ChEMBL
+lists glucose, calcium, oxygen, lactic acid and hydrogen peroxide as approved (max_phase 4),
+and "has a curated ChEMBL mechanism" would drop phenformin, berberine, chloroquine and
+temozolomide while keeping adenosine, epinephrine and nicotine. No exclusion was added.
+
+**Offline replay** of the AMPK discovery step (the three discovery searches re-run locally,
+k = 15, hybrid + rerank; same graph calls; no LLM):
+
+| retrieval | candidates from | ranking | sorafenib paper rank | sorafenib position (kept: top 20) |
+|---|---|---|---|---|
+| fusion off | all mentions | count / paper_rank | not retrieved | not a candidate |
+| fusion on | all mentions (56) | count | 8 | 44 |
+| fusion on | all mentions (56) | paper_rank | 8 | 45 |
+| fusion on | approved mentions only (38) | count | 8 | 26 |
+| fusion on | approved mentions only (38) | paper_rank | 8 | 30 |
+
+Why it fails: the highest-ranked hits are repurposing reviews that each mention many approved
+drugs (niclosamide, sertraline, celecoxib, auranofin, dexamethasone, propranolol, ...), so
+they outscore a drug named in a single rank-8 paper; with all mentions, unknown-phase
+entities in those reviews (A-769662, AMP, lipids, AICA ribonucleotide) also come first.
+Neither count nor rank says whether a paper reports the drug acting *on the target*.
+
+**Decision**: default stays `count`; the live 18-run comparison was not run (it would test a
+change that cannot recover the case it was built for, at about 130 calls). A fix needs
+target-specific evidence per candidate, e.g. let the specialist read the sentence that
+mentions each candidate in the top hits, or extract drug-target relations from the
+retrieved passages, rather than another ranking of mention counts.
