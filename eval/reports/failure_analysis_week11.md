@@ -568,3 +568,38 @@ change that cannot recover the case it was built for, at about 130 calls). A fix
 target-specific evidence per candidate, e.g. let the specialist read the sentence that
 mentions each candidate in the top hits, or extract drug-target relations from the
 retrieved passages, rather than another ranking of mention counts.
+
+## 16. Target-evidence screen, level 1 (2026-11-19): small gain only with fusion; off by default
+
+`TARGET_EVIDENCE_SCREEN=sentence` (new, default `off`; off is unchanged):
+`agents/evidence_screen.py` finds, in the passages the discovery searches returned, a sentence
+naming the candidate (name or KG synonym), the target (alias group, member genes, full name)
+and an action word, and naming **only that one candidate** (sentences listing several drugs
+are reviews' lists, and with them every review-listed drug qualified). Corpus-only
+candidates with such a sentence go first, by best search rank; graph candidates keep their
+slots; the cap stays 20; the specialist prompt shows each kept candidate's sentence and PMID
+inside the untrusted-text wrapper. Unit tests cover off-unchanged, synonym/alias matching,
+the one-drug rule, ordering, the cap and the wrapping.
+
+Gold lists for 8 targets were drafted (`eval/questions/drug_target_gold.jsonl`, status
+`needs_user_approval`; ChEMBL mechanisms from the graph plus Claude-added entries, each
+marked). The counts below use these **draft** lists and are provisional.
+
+Offline replay (discovery searches re-run locally, same graph calls, no LLM), drafted gold
+drugs in the top 20 and sorafenib's position:
+
+| retrieval | target | gold in top 20, off -> sentence | sorafenib, off -> sentence | entered / dropped with the screen |
+|---|---|---|---|---|
+| fusion off | AMPK | 5 -> 5 of 9 | - / - | + niclosamide, EGCG, SBI-0206965, sunitinib, ceramides; - salicylates, thiazolidinediones, AMP, AICA ribonucleotide, lipids |
+| fusion off | mTOR | 4 -> 4 of 4 | 13 / 13 | + indomethacin, quinoline; - acetylcysteine, propranolol |
+| fusion off | PI3K | 5 -> 5 of 6 | - / - | no change |
+| fusion on | AMPK | 5 -> **6** of 9 | - / **18** | + sorafenib, sunitinib, ASP4132; - AICA ribonucleotide, celecoxib, fatty acids |
+| fusion on | mTOR | 4 -> 4 of 4 | 12 / 12 | + LY294002, cisplatin, indomethacin; - AMP, auranofin, celecoxib |
+| fusion on | PI3K | 5 -> 5 of 6 | - / - | + a thienopyrimidine; - celecoxib |
+
+Reading: with fusion on, the screen recovers sorafenib for AMPK (one more gold drug); with
+today's default retrieval it changes no gold count and swaps useful drug classes
+(salicylates, thiazolidinediones) for tool compounds and natural products. The remaining
+noise (lipids, AMP, tool compounds such as ASP4132 and SBI-0206965) is what the planned
+level 2 (one LLM call to drop non-drugs) would address. Default stays `off`; the decision on
+live runs waits for the gold lists to be approved.
