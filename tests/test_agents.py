@@ -748,3 +748,111 @@ def test_merge_candidates_count_mode_unchanged_by_new_arguments() -> None:
     base = merge_candidates(graph, mentioned, True)
     assert merge_candidates(graph, mentioned, True, ranking="count", paper_ranks={"2": 1}) == base
     assert [c["name"] for c in base] == ["Metformin", "A", "B"]
+
+
+def test_evidence_screen_matches_synonyms_aliases_and_action_words() -> None:
+    from bioagent.agents.evidence_screen import find_evidence, target_terms
+
+    assert {"AMPK", "PRKAA1", "Amp-Activated Protein Kinase"} <= set(target_terms("AMPK"))
+    drugs = [
+        {"id": "S", "name": "Sorafenib", "synonyms": ["Nexavar"]},
+        {"id": "G", "name": "Glucose", "synonyms": []},
+        {"id": "M", "name": "Metformin", "synonyms": []},
+    ]
+    searches = [
+        {
+            "hits": [
+                {
+                    "pmid": "1",
+                    "text": "Glucose and AMPK were measured. Metformin was used. "
+                    "Metformin, sorafenib and glucose all activate AMPK.",
+                },
+                {"pmid": "2", "text": "Nexavar activates AMP-activated protein kinase in cells."},
+            ]
+        },
+        {
+            "hits": [
+                {"pmid": "3", "text": "Metformin activated PRKAA1 strongly."},
+                {"pmid": "2", "text": "duplicate pmid keeps its first rank"},
+            ]
+        },
+    ]
+    ev = find_evidence(drugs, searches, "AMPK")
+    assert set(ev) == {"S", "M"}  # glucose co-occurs with AMPK but without an action word
+    assert ev["S"].pmid == "2" and ev["S"].rank == 2 and "Nexavar" in ev["S"].sentence
+    assert ev["M"].pmid == "3" and ev["M"].rank == 1  # a list sentence (3 drugs) does not count
+    loose = find_evidence(drugs, searches, "AMPK", max_drugs_per_sentence=3)
+    assert loose["G"].pmid == "1" and "G" not in ev  # glucose only appears in the list
+
+
+def test_merge_candidates_evidence_ordering_and_cap() -> None:
+    from bioagent.agents.evidence_screen import Evidence
+    from bioagent.agents.nodes import MAX_CANDIDATES, merge_candidates
+
+    graph = {
+        "results": [
+            {
+                "drug": {"id": f"G{i}", "name": f"graph{i}", "max_phase": 4.0},
+                "source": "graph",
+                "evidence_count": 30 - i,
+            }
+            for i in range(12)
+        ]
+    }
+    drugs = [_mention(i, f"common{i}", 9 - i // 4, [f"9{i}"]) for i in range(30)]
+    drugs.append(_mention(99, "Sorafenib", 1, ["28625738"]))
+    drugs.append(_mention(98, "Late", 1, ["7"]))
+    mentioned = {"drugs": drugs}
+    base = merge_candidates(graph, mentioned, True)
+    assert merge_candidates(graph, mentioned, True, evidence=None) == base  # off: unchanged
+    ev = {
+        "D99": Evidence("28625738", 8, "Sorafenib activates AMPK."),
+        "D98": Evidence("7", 3, "Late inhibits AMPK."),
+    }
+    screened = merge_candidates(graph, mentioned, True, evidence=ev)
+    names = [c["name"] for c in screened]
+    assert len(screened) == MAX_CANDIDATES and "Sorafenib" not in [c["name"] for c in base]
+    graph_slots = [i for i, c in enumerate(base) if c["sources"] == ["graph"]]
+    assert graph_slots == [i for i, c in enumerate(screened) if c["sources"] == ["graph"]]
+    corpus = [n for n, c in zip(names, screened, strict=True) if c["sources"] == ["corpus"]]
+    assert corpus[:2] == ["Late", "Sorafenib"]  # evidence first, by best rank
+    assert screened[names.index("Sorafenib")]["evidence"]["pmid"] == "28625738"
+
+
+async def test_discovery_prompt_shows_wrapped_evidence_sentences(tmp_path: Path) -> None:
+    from bioagent.agents.nodes import DISCOVERY_QUERIES
+
+    log = ToolLog()
+    queries = [q.format(target="AMPK") for q in DISCOVERY_QUERIES]
+    corpus = {
+        q: [corpus_hit(str(500 + i), "Aspirin activates AMPK in cancer cells")]
+        for i, q in enumerate(queries)
+    }
+    plan = {
+        "tasks": [
+            {
+                "id": "t1",
+                "kind": "literature",
+                "description": "drugs acting on AMPK",
+                "depends_on": [],
+                "drug_target": "AMPK",
+                "approved_only": True,
+            }
+        ],
+        "rationale": "test",
+    }
+    deps = make_deps(
+        [plan],
+        scripted_specialist({}),
+        "Answer.",
+        fake_tools(log, corpus=corpus),
+        target_evidence_screen="sentence",
+    )
+    state = await run_graph(deps, tmp_path, question="Which approved drugs act on AMPK?")
+    summary = state["results"]["t1"]["summary"]
+    assert "Aspirin (corpus" in summary and "evidence (PMID 500)" in summary
+    assert "Aspirin activates AMPK in cancer cells" in summary
+    prompt = str(deps.specialist.model.seen[0][1].content)  # type: ignore[attr-defined]
+    start = prompt.index("Candidate drugs for AMPK")
+    assert prompt.rfind(OPEN, 0, start) > prompt.rfind(CLOSE, 0, start)  # inside a wrapper
+    assert prompt.count(OPEN) == prompt.count(CLOSE)

@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     # count: corpus-only drug candidates by number of retrieved papers mentioning them;
     # paper_rank: by the search rank of those papers (see agents.nodes.merge_candidates)
     drug_candidate_ranking: Literal["count", "paper_rank"] = "count"
+    # sentence: corpus candidates with a drug+target+action sentence in the retrieved passages
+    # go first and the prompt shows that sentence (agents.evidence_screen); off: unchanged
+    target_evidence_screen: Literal["off", "sentence"] = "off"
     # hybrid_rerank: fuse the reranker order with the BM25 order (RRF) instead of rerank only
     rerank_fusion: bool = False
     # Per-specialist overrides of SPECIALIST_MODEL, e.g. LITERATURE_MODEL=gemini:gemini-3.5-flash

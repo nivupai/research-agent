@@ -83,6 +83,7 @@ class AgentDeps:
     discovery_k: int = 15  # = DISCOVERY_K (defined below)
     discovery_min_evidence: int = 2
     drug_candidate_ranking: str = "count"
+    target_evidence_screen: str = "off"
     sleep: Callable[[float], Awaitable[None]] | None = None
     # Per-specialist model overrides (e.g. a stronger model for literature only).
     specialists: dict[str, RoleModel] = field(default_factory=dict)
@@ -332,6 +333,7 @@ def merge_candidates(
     approved_only: bool = False,
     ranking: str = "count",
     paper_ranks: Mapping[str, int] | None = None,
+    evidence: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Union of graph drugs_targeting hits and drugs annotated in the corpus hits.
 
@@ -340,6 +342,11 @@ def merge_candidates(
     (1 / (PAPER_RANK_K + rank)) of the retrieved papers that mention them, using
     ``paper_ranks`` (best search rank per PMID), so a drug named in a top-ranked paper is
     not crowded out by entities that are merely mentioned often. The cap is the same.
+
+    ``evidence`` (TARGET_EVIDENCE_SCREEN=sentence; drug id -> evidence_screen.Evidence) moves
+    corpus-only candidates with a drug+target+action sentence ahead of the other corpus-only
+    candidates, by best search rank; graph-sourced candidates keep their places and the cap
+    is unchanged. Kept candidates carry the sentence and its PMID.
     """
     merged: dict[str, dict[str, Any]] = {}
     for item in graph_result.get("results", []):
@@ -362,6 +369,9 @@ def merge_candidates(
         )  # fmt: skip
         entry["sources"].add("corpus")
         entry["corpus_papers"] = int(drug.get("papers_in_query") or 0)
+        if evidence is not None and str(drug["id"]) in evidence:
+            ev = evidence[str(drug["id"])]
+            entry["evidence"] = {"pmid": ev.pmid, "rank": ev.rank, "sentence": ev.sentence}
         if ranking == "paper_rank" and paper_ranks:
             ranks = [paper_ranks[str(p)] for p in drug.get("pmids", []) if str(p) in paper_ranks]
             entry["paper_score"] = round(sum(1 / (PAPER_RANK_K + r) for r in ranks), 6)
@@ -380,6 +390,11 @@ def merge_candidates(
         (e for e in merged.values() if e["sources"] == {"corpus"}),
         key=corpus_key if ranking == "paper_rank" else weight,
     )
+    if evidence is not None:  # stable: evidence first (by rank), the rest keep their order
+        corpus_only = sorted(
+            corpus_only,
+            key=lambda e: (0, e["evidence"]["rank"]) if "evidence" in e else (1, 0),
+        )
     ranked = both + [
         e for pair in itertools.zip_longest(graph_only, corpus_only) for e in pair if e
     ]
@@ -393,6 +408,7 @@ async def discover_drugs(
     k: int = DISCOVERY_K,
     min_evidence: int = 2,
     ranking: str = "count",
+    evidence_screen: str = "off",
 ) -> Discovery:
     """Always run drugs_targeting plus the discovery corpus searches for a drug_target task.
 
@@ -438,12 +454,19 @@ async def discover_drugs(
         )
     graph_result = results[0] if "error" not in results[0] else {}
     searches = [r for (n, _), r in zip(calls, results, strict=False) if n == "search_corpus"]
+    mentioned_ok = mentioned if "error" not in mentioned else {}
+    screened = None
+    if evidence_screen == "sentence":
+        from bioagent.agents.evidence_screen import find_evidence
+
+        screened = find_evidence(mentioned_ok.get("drugs", []), searches, target)
     candidates = merge_candidates(
         graph_result,
-        mentioned if "error" not in mentioned else {},
+        mentioned_ok,
         task.approved_only,
         ranking=ranking,
         paper_ranks=hit_ranks(searches) if ranking == "paper_rank" else None,
+        evidence=screened,
     )
     listing = "; ".join(
         f"{c['name']} ({'+'.join(c['sources'])}"
@@ -453,6 +476,11 @@ async def discover_drugs(
             else ", drug class or phase unknown"
         )
         + ")"
+        + (
+            f' evidence (PMID {c["evidence"]["pmid"]}): "{c["evidence"]["sentence"]}"'
+            if "evidence" in c
+            else ""
+        )
         for c in candidates
     )
     summary = f"Candidate drugs for {target} (graph + corpus union): {listing or 'none found'}"
@@ -501,6 +529,7 @@ def make_specialist(
                 deps.discovery_k,
                 deps.discovery_min_evidence,
                 deps.drug_candidate_ranking,
+                deps.target_evidence_screen,
             )
             evidence.update(discovery.evidence)
             ctx.observe(discovery.prompt)
