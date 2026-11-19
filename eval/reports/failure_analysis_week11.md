@@ -506,3 +506,30 @@ several targets before adoption: (a) exclude endogenous metabolites and ions fro
 hit that mentions them, not only by paper count, so a drug named in a top-ranked hit for an
 "activator/inhibitor" query survives; (c) let the specialist see the full mentioned-drug list
 with paper counts instead of a fixed top 20.
+
+## 14. Rerank fusion, repeated (2026-11-19): not adopted
+
+AMPK, mTOR and PI3K questions, `RERANK_FUSION` off and on alternately, 3 runs per condition
+(18 runs, all completed), flash-lite in every role, settings forwarded to the MCP servers
+(section 12 fix), Neo4j checked healthy before every run. Per condition (mean of 3):
+
+| question | fusion | references | groundedness | drugs named | key paper 28625738 retrieved | sorafenib in answer | seconds |
+|---|---|---|---|---|---|---|---|
+| AMPK / glioblastoma | off | 7.3 | 0.36 | 4.3 | 0/3 | 0/3 | 51 |
+| AMPK / glioblastoma | on | 3.3 | 0.15 | 1.7 | **3/3** | 0/3 | 61 |
+| mTOR / glioblastoma | off | 9.3 | 0.38 | 4.3 | - | - | 78 |
+| mTOR / glioblastoma | on | 7.0 | 0.33 | 4.0 | - | - | 118 |
+| PI3K / breast cancer | off | 6.0 | 0.42 | 3.7 | - | - | 112 |
+| PI3K / breast cancer | on | 8.0 | 0.45 | 4.3 | - | - | 79 |
+
+Paired over the 9 (question, repeat) pairs, on minus off (bootstrap 95% CI, sign-flip p):
+references -1.4 [-3.8, +1.0], p = 0.34; groundedness -0.08 [-0.21, +0.04], p = 0.32; drugs
+named -0.8 [-2.8, +1.3], p = 0.56; latency +5.6 s [-26, +38], p = 0.72.
+
+**Verdict**: fusion does what the offline ranking predicted for retrieval (the sorafenib
+paper is retrieved in 3 of 3 AMPK runs instead of 0 of 3), but it does not change any answer
+measure significantly, never gets sorafenib into an answer (section 13: it is cut at the
+20-candidate limit), and the AMPK runs trended worse. `RERANK_FUSION` stays off; the fix for
+sorafenib has to be in the candidate selection (section 13 options), not in retrieval.
+Earlier note: an aborted first launch this morning ran one question while Docker Desktop (and
+so Neo4j) was down; it was discarded and the job restarted after Neo4j was back.
