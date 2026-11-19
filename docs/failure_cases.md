@@ -59,8 +59,12 @@ Open issues are marked **open**.
   Offline follow-up: the direct paper ranks 25th (the agent keeps 15; BM25 alone has it 7th,
   the reranker demotes it), and the graph edge rests on one paper, so `min_evidence=2` drops
   it ([failure_analysis_week11.md](../eval/reports/failure_analysis_week11.md)). Fusing the
-  reranker order with BM25 (`RERANK_FUSION=true`) lifts the paper to rank 8 offline; the live
-  test is still pending, and the setting is off by default.
+  reranker order with BM25 (`RERANK_FUSION=true`) lifts the paper to rank 8 offline. Live
+  (2026-11-18, after fixing a bug that kept shell settings from reaching the MCP servers) the
+  fused AMPK run does retrieve the paper, but the answer still omits sorafenib, so the
+  remaining gap is in the candidate selection: sorafenib ranks 41st of 50 mentioned drugs and
+  is cut at the 20-candidate limit. Repeated 3x per question, fusion retrieves the paper every
+  time but changes no answer measure significantly, so it stays off.
 * **Lesson**: do not rely on a small model to follow a multi-step search recipe; run the
   recipe in code and give the model the union.
 

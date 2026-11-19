@@ -14,6 +14,7 @@ PMID-backed evidence and the specialist can check an edge against the abstracts.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from collections.abc import Mapping, Sequence
 from contextlib import AsyncExitStack
@@ -85,6 +86,21 @@ class StaticToolProvider:
         return list(scoped(self._tools, kind).values())
 
 
+def server_environment(extra: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Environment for an MCP server subprocess: the MCP client's minimal default (PATH,
+    HOME, ...), plus this process's bioagent settings variables (the upper-cased names of
+    ``Settings`` fields, e.g. RERANK_FUSION), plus per-server overrides. Without the middle
+    part, settings exported in the shell would not reach the servers (only ``.env`` would).
+    """
+    from mcp.client.stdio import get_default_environment
+
+    from bioagent.config import Settings
+
+    names = {field.upper() for field in Settings.model_fields}
+    forwarded = {k: v for k, v in os.environ.items() if k.upper() in names}
+    return {**get_default_environment(), **forwarded, **dict(extra or {})}
+
+
 class MCPToolHub:
     """Async context manager owning one stdio session per MCP server."""
 
@@ -113,11 +129,7 @@ class MCPToolHub:
                     errlog = self._stack.enter_context(
                         (self.log_dir / f"mcp-{name}.log").open("a", encoding="utf-8")
                     )
-                env = None
-                if name in self.server_env:
-                    from mcp.client.stdio import get_default_environment
-
-                    env = {**get_default_environment(), **self.server_env[name]}
+                env = server_environment(self.server_env.get(name))
                 params = StdioServerParameters(command=sys.executable, args=["-m", module], env=env)
                 read, write = await self._stack.enter_async_context(
                     stdio_client(params, errlog=errlog)

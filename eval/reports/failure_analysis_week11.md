@@ -399,3 +399,137 @@ one more); paused on the flash-lite quota. Partial results (110 items): accuracy
 corrected 100% (n = 11), PubMedQA 57.6% [39.4, 72.8] (n = 33); citation support 66.4%,
 groundedness 59.1%, 27.9 s and $0.0108 (list-price equivalent) per question. Remaining: 67
 PubMedQA and 11 unanswerable items (`make eval-full RESUME=full-v1`).
+
+## 11. Runs of 2026-11-17 (after the reset)
+
+**Full eval `full-v1`: 180 of 188** (70 more; paused on the flash-lite daily quota). Accuracy
+77.8% [72.2, 83.6] over 180 items:
+
+| category | n | accuracy [95% CI] | other |
+|---|---|---|---|
+| computed | 6 | 100.0% [100.0, 100.0] | |
+| corpus | 60 | 90.0% [83.3, 95.8] | gold-PMID recall 100% |
+| false premise | 11 | 100.0% (premise corrected) | |
+| PubMedQA | 100 (complete) | 66.0% [57.0, 75.0] | gold-PMID recall 94.0% |
+| unanswerable | 3 of 11 | 100.0% abstained | |
+
+PubMedQA on all 100 items (66.0%) is higher than the 30-item held-out set (56.7%) and the
+smoke subset (50.0%); the CIs overlap. Remaining: 8 unanswerable items.
+
+**Sorafenib live comparison: 2 of 8 questions completed.**
+
+* AMPK baseline (run 20261117-210922-ee4f6c): drugs named metformin, phenformin, berberine,
+  aspirin/salicylate, rosiglitazone; no sorafenib, cites neither 28625738 nor 25080865.
+* AMPK with `DISCOVERY_K=25` (run 20261117-211128-c2e262): only metformin named; no sorafenib.
+* `RERANK_FUSION=true` (AMPK) failed on a Gemini flash **503 "model is currently experiencing
+  high demand"** after 5 retries (transient, provider side). The other five (fusion + k25,
+  mTOR and PI3K with and without fusion) stopped on the flash **daily quota (429)**. No bug in
+  the fusion path; the `KeyError: '__import__'` lines in the logs are interpreter-shutdown
+  noise from an un-awaited HTTP coroutine. The live effect of fusion is still unmeasured;
+  offline it lifts 28625738 from rank 25 to 8.
+* Flash's free daily limit is small: the planner and synthesizer use flash, and it ran out
+  after about 2-3 agent questions. The comparison may need a flash-lite planner/synthesizer
+  (`PLANNER_MODEL`/`SYNTH_MODEL`) to finish in one day.
+
+## 12. Runs of 2026-11-18: full eval complete, sorafenib fusion (live)
+
+**Full eval `full-v1`: complete, 188 of 188** (flash-lite in every role, defences on, 1 repeat).
+Accuracy **78.7% [72.9, 84.6]**; citation support 63.2% [58.3, 68.3]; groundedness 54.0%
+[49.0, 59.1]; 30.3 s [26.4, 34.4] and $0.0104 (list-price equivalent; free tier) per question.
+
+| category | n | accuracy [95% CI] | other |
+|---|---|---|---|
+| computed | 6 | 100.0% | |
+| corpus | 60 | 90.0% [83.3, 95.8] | gold-PMID recall 100% |
+| false premise | 11 | 100.0% (premise corrected) | |
+| PubMedQA | 100 | 66.0% [57.0, 75.0] | gold-PMID recall 94.0% |
+| unanswerable | 11 | 100.0% (abstained) | |
+
+**Bug found: shell settings did not reach the MCP servers.** The retrieval server runs as an
+MCP subprocess; when a server had no per-server overrides it was started with the MCP
+client's minimal default environment (PATH, HOME, ...), so a setting exported in the shell
+(`RERANK_FUSION=true`) never reached it (`.env` values did, because the servers read that
+file). The first fusion runs this morning (and on 2026-11-17) therefore ran *without*
+fusion. Fixed: `bioagent.agents.tools.server_environment` forwards this process's bioagent
+settings variables (only names of `Settings` fields) to every server; test added.
+
+**Sorafenib, live (flash-lite in every role, one run per cell)**:
+
+| question | run | key sorafenib paper 28625738 in evidence | sorafenib in answer | references | groundedness | drugs named |
+|---|---|---|---|---|---|---|
+| AMPK / glioblastoma | baseline | no | no | 7 | 0.50 | metformin, aspirin |
+| AMPK / glioblastoma | fusion (fixed) | **yes** | no | 15 | 0.63 | metformin |
+| mTOR / glioblastoma | baseline | no | no | 11 | 0.50 | rapamycin/sirolimus, everolimus, metformin |
+| mTOR / glioblastoma | fusion (fixed) | no | no | 14 | 0.50 | + temsirolimus, alpelisib, phenformin |
+| PI3K / breast cancer | baseline | no | no | 2 | 0.25 | alpelisib |
+| PI3K / breast cancer | fusion (fixed) | no | no | 7 | 0.30 | + idelalisib, copanlisib, duvelisib, inavolisib, everolimus, sirolimus |
+
+Reading: with fusion actually on, the AMPK run now retrieves the sorafenib paper, as the
+offline ranking predicted (rank 25 -> 8), but the answer still does not name sorafenib, so
+the next bottleneck is after retrieval (the drug-candidate merge, which ranks by paper count
+and keeps 20, or the synthesizer's evidence budget). Fusion runs had more references in all
+three questions, but with one run per cell and run-to-run variation as large as this (the
+two invalid "fusion" runs, which were really baselines, also named more drugs for PI3K),
+no effect on answer quality can be claimed. `RERANK_FUSION` stays off by default. Next:
+inspect the AMPK fusion run's candidate list, and run 3+ repeats per cell before deciding.
+
+## 13. Where sorafenib is lost after retrieval (offline, AMPK fusion run 20261118-081915-c32ab2)
+
+Reconstructed from the saved run with the graph service (no LLM calls):
+
+1. **Retrieved.** The discovery corpus searches return 60 papers for task t1, including
+   28625738 ("Mechanisms of paradoxical activation of AMPK by the kinase inhibitors SU6656 and
+   sorafenib"); the knowledge graph records `Sorafenib` as mentioned in it (2 mentions).
+2. **Ranked low among mentioned drugs.** `drugs_mentioned` over the 60 papers returns 50 drugs
+   ordered by the number of those papers that mention them; sorafenib is in 1 paper and comes
+   **41st of 50**. Above it are frequent non-drug or endogenous entities (adenosine
+   triphosphate, glucose, lipids, fatty acids, adenosine monophosphate, carbon) and the
+   investigational activator A-769662 (named by its chemical name).
+3. **Cut at the candidate limit.** `merge_candidates` keeps 20 candidates (drugs found by both
+   the graph and the corpus first, then graph-only and corpus-only alternately, each by
+   evidence count). Sorafenib is not among the 20, so neither the specialist nor the
+   synthesizer is told about it; the passage itself sits among 146 evidence items and is not
+   cited.
+
+**Tried offline**: dropping corpus mentions without ChEMBL phase 4 when the question asks for
+approved drugs lifts sorafenib to 18th of 50 among approved mentions, but it is still cut:
+the 20 slots go to metformin, berberine, aspirin and phenformin, and also to endogenous
+"approved" entries from the graph (glucose, hydrogen peroxide, calcium, adenosine,
+epinephrine, nicotine) and to approved drugs that merely appear in a retrieved abstract
+(sertraline, disulfiram, celecoxib). The underlying gap is that a candidate is not tied to
+the target: PubTator links only STK11 and FYN in 28625738, not an AMPK subunit, so a
+"co-mentioned with the target" filter would also miss it.
+
+**No fix shipped** (no small change is clearly correct). Options, each to be measured on
+several targets before adoption: (a) exclude endogenous metabolites and ions from candidates
+(a curated list or a ChEBI role filter); (b) weight corpus candidates by the rank of the best
+hit that mentions them, not only by paper count, so a drug named in a top-ranked hit for an
+"activator/inhibitor" query survives; (c) let the specialist see the full mentioned-drug list
+with paper counts instead of a fixed top 20.
+
+## 14. Rerank fusion, repeated (2026-11-19): not adopted
+
+AMPK, mTOR and PI3K questions, `RERANK_FUSION` off and on alternately, 3 runs per condition
+(18 runs, all completed), flash-lite in every role, settings forwarded to the MCP servers
+(section 12 fix), Neo4j checked healthy before every run. Per condition (mean of 3):
+
+| question | fusion | references | groundedness | drugs named | key paper 28625738 retrieved | sorafenib in answer | seconds |
+|---|---|---|---|---|---|---|---|
+| AMPK / glioblastoma | off | 7.3 | 0.36 | 4.3 | 0/3 | 0/3 | 51 |
+| AMPK / glioblastoma | on | 3.3 | 0.15 | 1.7 | **3/3** | 0/3 | 61 |
+| mTOR / glioblastoma | off | 9.3 | 0.38 | 4.3 | - | - | 78 |
+| mTOR / glioblastoma | on | 7.0 | 0.33 | 4.0 | - | - | 118 |
+| PI3K / breast cancer | off | 6.0 | 0.42 | 3.7 | - | - | 112 |
+| PI3K / breast cancer | on | 8.0 | 0.45 | 4.3 | - | - | 79 |
+
+Paired over the 9 (question, repeat) pairs, on minus off (bootstrap 95% CI, sign-flip p):
+references -1.4 [-3.8, +1.0], p = 0.34; groundedness -0.08 [-0.21, +0.04], p = 0.32; drugs
+named -0.8 [-2.8, +1.3], p = 0.56; latency +5.6 s [-26, +38], p = 0.72.
+
+**Verdict**: fusion does what the offline ranking predicted for retrieval (the sorafenib
+paper is retrieved in 3 of 3 AMPK runs instead of 0 of 3), but it does not change any answer
+measure significantly, never gets sorafenib into an answer (section 13: it is cut at the
+20-candidate limit), and the AMPK runs trended worse. `RERANK_FUSION` stays off; the fix for
+sorafenib has to be in the candidate selection (section 13 options), not in retrieval.
+Earlier note: an aborted first launch this morning ran one question while Docker Desktop (and
+so Neo4j) was down; it was discarded and the job restarted after Neo4j was back.
