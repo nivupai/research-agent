@@ -472,3 +472,37 @@ three questions, but with one run per cell and run-to-run variation as large as 
 two invalid "fusion" runs, which were really baselines, also named more drugs for PI3K),
 no effect on answer quality can be claimed. `RERANK_FUSION` stays off by default. Next:
 inspect the AMPK fusion run's candidate list, and run 3+ repeats per cell before deciding.
+
+## 13. Where sorafenib is lost after retrieval (offline, AMPK fusion run 20261118-081915-c32ab2)
+
+Reconstructed from the saved run with the graph service (no LLM calls):
+
+1. **Retrieved.** The discovery corpus searches return 60 papers for task t1, including
+   28625738 ("Mechanisms of paradoxical activation of AMPK by the kinase inhibitors SU6656 and
+   sorafenib"); the knowledge graph records `Sorafenib` as mentioned in it (2 mentions).
+2. **Ranked low among mentioned drugs.** `drugs_mentioned` over the 60 papers returns 50 drugs
+   ordered by the number of those papers that mention them; sorafenib is in 1 paper and comes
+   **41st of 50**. Above it are frequent non-drug or endogenous entities (adenosine
+   triphosphate, glucose, lipids, fatty acids, adenosine monophosphate, carbon) and the
+   investigational activator A-769662 (named by its chemical name).
+3. **Cut at the candidate limit.** `merge_candidates` keeps 20 candidates (drugs found by both
+   the graph and the corpus first, then graph-only and corpus-only alternately, each by
+   evidence count). Sorafenib is not among the 20, so neither the specialist nor the
+   synthesizer is told about it; the passage itself sits among 146 evidence items and is not
+   cited.
+
+**Tried offline**: dropping corpus mentions without ChEMBL phase 4 when the question asks for
+approved drugs lifts sorafenib to 18th of 50 among approved mentions, but it is still cut:
+the 20 slots go to metformin, berberine, aspirin and phenformin, and also to endogenous
+"approved" entries from the graph (glucose, hydrogen peroxide, calcium, adenosine,
+epinephrine, nicotine) and to approved drugs that merely appear in a retrieved abstract
+(sertraline, disulfiram, celecoxib). The underlying gap is that a candidate is not tied to
+the target: PubTator links only STK11 and FYN in 28625738, not an AMPK subunit, so a
+"co-mentioned with the target" filter would also miss it.
+
+**No fix shipped** (no small change is clearly correct). Options, each to be measured on
+several targets before adoption: (a) exclude endogenous metabolites and ions from candidates
+(a curated list or a ChEBI role filter); (b) weight corpus candidates by the rank of the best
+hit that mentions them, not only by paper count, so a drug named in a top-ranked hit for an
+"activator/inhibitor" query survives; (c) let the specialist see the full mentioned-drug list
+with paper counts instead of a fixed top 20.
