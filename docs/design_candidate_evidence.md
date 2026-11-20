@@ -1,6 +1,10 @@
 # Design: target-specific evidence for drug candidates
 
-Status: proposal (2026-11-19). Nothing here is implemented yet except the offline check below.
+Status (2026-11-20): level 1 implemented as `TARGET_EVIDENCE_SCREEN=sentence` (default off),
+gold lists approved by the owner, live comparison done: **no measurable effect with default
+retrieval** (failure analysis section 17), so it stays off and level 2 is not being built.
+The comparison found that claim verification removes about half of the correct drug names,
+which is the bigger problem for these questions. Original proposal follows.
 
 ## Problem
 

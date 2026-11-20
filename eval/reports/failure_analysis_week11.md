@@ -603,3 +603,48 @@ today's default retrieval it changes no gold count and swaps useful drug classes
 noise (lipids, AMP, tool compounds such as ASP4132 and SBI-0206965) is what the planned
 level 2 (one LLM call to drop non-drugs) would address. Default stays `off`; the decision on
 live runs waits for the gold lists to be approved.
+
+## 17. Target-evidence screen, live (2026-11-20): no effect; the verifier removes half the gold drugs
+
+48 runs: 8 "which approved drugs act on X" questions x `TARGET_EVIDENCE_SCREEN` off / sentence
+x 3, flash-lite in every role, default retrieval (`RERANK_FUSION` off; the offline gain in
+section 16 appeared only with fusion), verifier on with the default remove policy, Neo4j
+checked before every run; all 48 completed. Scored against the owner-approved gold lists
+(`eval/questions/drug_target_gold.jsonl`) with `scripts/score_drug_answers.py`: recall =
+gold drugs named (names and graph synonyms), in the final answer and in the pre-verification
+draft; "non-gold" = other approved drugs named (a precision proxy).
+
+| target | screen | final recall | draft recall | non-gold (final) | groundedness | references | seconds |
+|---|---|---|---|---|---|---|---|
+| AMPK | off / sentence | 0.17 / 0.29 | 0.50 / 0.50 | 0.0 / 1.7 | 0.22 / 0.37 | 2.7 / 8.0 | 71 / 54 |
+| mTOR | off / sentence | 1.00 / 0.83 | 1.00 / 1.00 | 1.7 / 2.0 | 0.49 / 0.40 | 13.7 / 11.0 | 51 / 57 |
+| PI3K | off / sentence | 0.56 / 0.28 | 0.83 / 0.78 | 2.0 / 1.7 | 0.32 / 0.37 | 5.3 / 5.0 | 50 / 66 |
+| EGFR | off / sentence | 0.23 / 0.10 | 0.61 / 0.69 | 3.0 / 1.0 | 0.52 / 0.35 | 10.3 / 5.7 | 49 / 61 |
+| HDAC | off / sentence | 0.50 / 0.61 | 0.67 / 0.67 | 2.3 / 2.0 | 0.56 / 0.76 | 8.7 / 12.3 | 48 / 48 |
+| PARP | off / sentence | 0.25 / 0.25 | 0.25 / 0.50 | 0.7 / 1.3 | 0.34 / 0.65 | 7.0 / 13.0 | 43 / 57 |
+| VEGFR | off / sentence | 0.22 / 0.11 | 0.58 / 0.58 | 0.7 / 0.7 | 0.46 / 0.39 | 4.0 / 4.3 | 59 / 54 |
+| COX-2 | off / sentence | 0.30 / 0.15 | 0.30 / 0.33 | 2.0 / 3.0 | 0.54 / 0.60 | 8.0 / 10.3 | 44 / 46 |
+
+Paired over the 24 (target, repeat) pairs, sentence minus off (bootstrap 95% CI, sign-flip
+p): final recall -0.075 [-0.167, +0.012], p = 0.12; draft recall +0.039 [-0.020, +0.120],
+p = 0.37; non-gold +0.13 [-0.79, +0.96], p = 0.85; groundedness +0.054 [-0.055, +0.147],
+p = 0.31; references +1.3 [-0.9, +3.2], p = 0.26; latency +3.5 s [-3.3, +10.6], p = 0.36.
+Sorafenib was named in none of the 6 AMPK answers (or drafts), in either condition: with
+default retrieval its paper is not retrieved at all (section 13).
+
+**Verdict on the screen**: no measurable effect with default retrieval; `TARGET_EVIDENCE_SCREEN`
+stays off. Its only offline gain needs rerank fusion, which on its own did not help answers
+(section 14). Not pursued further for now.
+
+**Bigger finding: the verifier removes half of the correct drug names.** Across all 48
+runs, gold-drug recall is 0.612 in the drafts and 0.365 in the final answers (-0.246
+[-0.319, -0.172], p < 0.001); 116 of the 230 gold-drug mentions in drafts were removed by
+claim verification (DeBERTa NLI, remove policy). Example: an AMPK draft named metformin,
+phenformin, aspirin and rosiglitazone; the final answer kept only aspirin, and 12 of 13
+sentences were removed. These are correct statements whose cited passage (often a
+knowledge-graph relation or a different paper's abstract) does not entail the sentence word
+for word. This is the same strictness seen in failure case 8 and section 2, now measured on
+answer recall: for list-style questions the remove policy costs more than it saves.
+Candidates to test next (same 48-run design, no new gold needed): `VERIFY_POLICY=flag`
+instead of remove; the router verifier (LoRA + Gemini); and verifying graph-relation claims
+against the graph instead of with NLI.
