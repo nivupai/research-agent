@@ -648,3 +648,75 @@ answer recall: for list-style questions the remove policy costs more than it sav
 Candidates to test next (same 48-run design, no new gold needed): `VERIFY_POLICY=flag`
 instead of remove; the router verifier (LoRA + Gemini); and verifying graph-relation claims
 against the graph instead of with NLI.
+
+## 18. Verifier policy flag vs remove (2026-11-20/21): flag keeps the drugs, but the flags carry no signal
+
+Same 48-run design as section 17: 8 drug-target questions x `VERIFY_POLICY` remove / flag x 3,
+flash-lite in every role, default retrieval, `TARGET_EVIDENCE_SCREEN` off, conditions
+interleaved, Neo4j checked before each run. 43 runs completed on 2026-11-20 before the daily
+quota ran out; the 7 missing ones (6 not started, 1 failed on a Gemini 503) were run on
+2026-11-21 with the same settings. All 48 scored with `scripts/score_drug_answers.py`, which
+now also reports precision (gold / all approved drugs named), drugs named only inside
+`[unverified]` sentences, and the share of checked sentences removed or flagged.
+
+| target | policy | final recall | draft recall | non-gold | precision | removed / flagged share | groundedness | references | seconds |
+|---|---|---|---|---|---|---|---|---|---|
+| AMPK | remove / flag | 0.25 / 0.50 | 0.50 / 0.50 | 0.7 / 2.3 | 0.72 / 0.64 | 0.76 / 0.67 | 0.23 / 0.38 | 3.3 / 17.0 | 158 / 191 |
+| mTOR | remove / flag | 1.00 / 1.00 | 1.00 / 1.00 | 1.0 / 5.0 | 0.82 / 0.45 | 0.42 / 0.59 | 0.52 / 0.38 | 9.0 / 14.3 | 264 / 143 |
+| PI3K | remove / flag | 0.50 / 0.83 | 0.83 / 0.83 | 1.7 / 3.0 | 0.65 / 0.63 | 0.64 / 0.81 | 0.30 / 0.28 | 4.7 / 6.3 | 158 / 186 |
+| EGFR | remove / flag | 0.21 / 0.69 | 0.64 / 0.69 | 1.0 / 5.7 | 0.77 / 0.62 | 0.46 / 0.45 | 0.51 / 0.52 | 9.7 / 11.0 | 123 / 106 |
+| HDAC | remove / flag | 0.50 / 0.67 | 0.67 / 0.67 | 2.0 / 3.0 | 0.60 / 0.57 | 0.38 / 0.36 | 0.59 / 0.75 | 8.3 / 14.3 | 147 / 154 |
+| PARP | remove / flag | 0.25 / 0.25 | 0.25 / 0.25 | 1.7 / 1.7 | 0.39 / 0.39 | 0.57 / 0.88 | 0.41 / 0.19 | 6.7 / 5.0 | 97 / 108 |
+| VEGFR | remove / flag | 0.07 / 0.58 | 0.56 / 0.58 | 0.7 / 2.3 | 0.67 / 0.80 | 0.62 / 0.80 | 0.36 / 0.31 | 5.0 / 14.3 | 148 / 93 |
+| COX-2 | remove / flag | 0.30 / 0.33 | 0.33 / 0.33 | 2.0 / 3.3 | 0.58 / 0.48 | 0.48 / 0.76 | 0.40 / 0.33 | 7.7 / 8.0 | 142 / 115 |
+
+(Precision is the per-run mean over runs that named at least one approved drug. "Removed /
+flagged share" is the removed share for remove and the flagged share for flag.)
+
+Means over all 24 runs per policy, remove / flag: final recall 0.384 / 0.607 (drafts 0.597 /
+0.607, so the drafts are comparable); non-gold drugs named 1.33 / 3.29; precision 0.650 /
+0.571; groundedness 0.415 / 0.392; references 6.8 / 11.3; latency 154 / 137 s. Under remove,
+54% of checked sentences are deleted; under flag, 66% carry `[unverified]`.
+
+Paired over the 24 (target, repeat) pairs, remove minus flag (bootstrap 95% CI, sign-flip p):
+recall -0.223 [-0.304, -0.138], p < 0.001; non-gold -1.96 [-2.71, -1.25], p < 0.001;
+precision +0.079 [-0.006, +0.167], p = 0.10; references -4.5 [-7.2, -1.9], p = 0.002;
+groundedness +0.024 [-0.051, +0.099], p = 0.54; latency +17 s [-9, +43], p = 0.20; draft
+recall -0.009 [-0.026, +0.008], p = 0.38 (the drafts do not differ, as expected).
+
+**Does the verdict separate right from wrong drugs?** No. Pooled over runs:
+
+* Remove: drafts named 113 gold and 76 non-gold drug mentions; the verifier deleted 55 gold
+  and 44 non-gold (removed mentions are 56% gold, kept ones 64% gold). Precision rises a
+  little only because the deletion is slightly less often gold, not because it targets the
+  wrong drugs.
+* Flag: of 116 gold and 79 non-gold mentions, 93 gold and 60 non-gold appear only in flagged
+  sentences. Flagged mentions are 61% gold, unflagged ones 55% gold: the flag is, if
+  anything, *more* often on correct drugs. Only 23 gold mentions in all 24 flag-mode answers
+  sit in sentences the verifier accepted.
+
+So for these questions the NLI verifier's verdict is close to uninformative about whether a
+named drug acts on the target: correct statements fail entailment because the cited passage
+(a knowledge-graph relation, or another paper's abstract) does not state them word for word.
+"Non-gold" is a proxy: the gold lists are not exhaustive, so some non-gold drugs are correct
+(e.g. other rapalogs for mTOR), which makes precision a lower bound in both conditions.
+
+Latency was about 2.5x section 17's (about 145 s vs 52 s per run) in both conditions alike;
+the 2026-11-20 runs saw Gemini 503 retries. It does not differ between policies.
+
+**Verdict**: I am not changing the default. The decision rule in `docs/design_candidate_evidence.md`
+(recall up with a CI excluding zero *and* precision not down) is met for recall (+0.22) but
+not clearly for precision: the point estimate drops 0.08 with flag, the CI just includes zero.
+On the evidence:
+
+* `remove` throws away about 40% of the correct drugs (0.60 → 0.38 recall) for a small,
+  non-significant precision gain that comes from deleting at random, not from catching errors.
+* `flag` keeps the drafts' content and twice the references, but marks two thirds of every
+  answer `[unverified]`, and the mark does not tell a reader which drugs to doubt.
+
+Neither is a good answer for list questions. The flag policy is the more honest of the two,
+since it does not hide correct drugs, and it would be a reasonable default for drug-target
+(discovery) tasks only, if the owner prefers recall; that is a product decision, not one this
+data settles. The underlying fix is in the verifier: check graph-backed claims ("X inhibits
+Y", from ChEMBL/PubTator relations) against the graph rather than with NLI, and test the router
+verifier (LoRA + Gemini) on these 48-run questions. Both reuse this design and gold.

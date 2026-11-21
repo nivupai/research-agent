@@ -7,7 +7,9 @@ runs.tsv rows: target, condition, repeat, exit code, run_id (written by the comp
 Per run: gold recall in the final answer and in the pre-verification draft (the verifier may
 remove sentences) (direct + indirect drugs named; names and graph synonyms,
 word-boundary, case-insensitive), non-gold approved drugs named (ChEMBL max_phase 4 drug
-names from the graph, a precision proxy), groundedness, references, latency. Then per-target
+names from the graph, a precision proxy), precision (gold / all approved drugs named), drugs
+named only in [unverified] sentences, share of sentences removed or flagged, groundedness,
+references, latency. Then per-target
 means and paired differences between the two conditions over (target, repeat) with a
 bootstrap 95% CI and a sign-flip permutation p. Needs Neo4j (synonyms); no LLM calls.
 """
@@ -91,6 +93,19 @@ def score_run(
     gold_terms = {t.lower() for g in gold_names for t in syn.get(g, [g])}
     others = [n for n in approved if n.lower() not in gold_terms and named(answer, [n])]
     draft_others = [n for n in approved if n.lower() not in gold_terms and named(draft, [n])]
+    # drugs named only inside sentences the verifier flagged ([unverified]) in the final answer
+    from bioagent.verify.text import split_sentences
+
+    flagged_text = " ".join(x for x in split_sentences(answer) if "[unverified]" in x)
+    clean_text = " ".join(x for x in split_sentences(answer) if "[unverified]" not in x)
+    flagged_gold = [
+        g
+        for g in hits
+        if named(flagged_text, syn.get(g, [g])) and not named(clean_text, syn.get(g, [g]))
+    ]
+    flagged_other = [n for n in others if named(flagged_text, [n]) and not named(clean_text, [n])]
+    verification = record.get("verification") or {}
+    checked = verification.get("sentences_checked") or 0
     stats = record.get("stats", {})
     out = {
         "gold_named": hits,
@@ -100,6 +115,15 @@ def score_run(
         "draft_gold_named": draft_hits,
         "draft_recall": len(draft_hits) / len(gold_names) if gold_names else None,
         "draft_non_gold": len(draft_others),
+        "precision": len(hits) / (len(hits) + len(others)) if hits or others else None,
+        "flagged_gold": len(flagged_gold),
+        "flagged_non_gold": len(flagged_other),
+        "removed_frac": len(verification.get("removed_sentences") or []) / checked
+        if checked
+        else 0.0,
+        "flagged_frac": len(verification.get("flagged_sentences") or []) / checked
+        if checked
+        else 0.0,
         "groundedness": (record.get("verification") or {}).get("groundedness"),
         "references": len(record.get("citations", [])),
         "seconds": stats.get("wall_seconds"),
@@ -135,6 +159,11 @@ def main() -> None:
         "draft_recall",
         "non_gold",
         "draft_non_gold",
+        "precision",
+        "flagged_gold",
+        "flagged_non_gold",
+        "removed_frac",
+        "flagged_frac",
         "groundedness",
         "references",
         "seconds",
@@ -145,7 +174,10 @@ def main() -> None:
             rs = [v for (t, cc, _), v in scores.items() if t == target and cc == c]
             if rs:
                 per_target[target][c] = {
-                    m: round(statistics.fmean(r[m] or 0 for r in rs), 3) for m in metrics
+                    m: round(statistics.fmean(vals), 3)
+                    if (vals := [r[m] for r in rs if r[m] is not None])
+                    else None
+                    for m in metrics
                 } | {"n": len(rs)}
     paired: dict[str, Any] = {}
     if len(conds) == 2:
@@ -153,9 +185,11 @@ def main() -> None:
         keys = [(t, r) for (t, c, r) in scores if c == a and (t, b, r) in scores]
         for m in [*metrics, "recall_without_sorafenib"]:
             diffs = [
-                (scores[(t, b, r)].get(m) or 0) - (scores[(t, a, r)].get(m) or 0)
+                scores[(t, b, r)][m] - scores[(t, a, r)][m]
                 for t, r in keys
-                if m != "recall_without_sorafenib" or t == "AMPK"
+                if (m != "recall_without_sorafenib" or t == "AMPK")
+                and scores[(t, b, r)].get(m) is not None
+                and scores[(t, a, r)].get(m) is not None
             ]
             if diffs:
                 lo, hi = paired_bootstrap(diffs)
