@@ -37,7 +37,7 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         help="synthesizer model for this run (default: flash-lite, like every other role)",
     )
     run.add_argument("--repeats", type=int, default=1)
-    run.add_argument("--provider", choices=["gemini", "ollama"], default="gemini")
+    run.add_argument("--provider", choices=["gemini", "ollama", "groq"], default="gemini")
     run.add_argument("--resume", metavar="RUN_ID")
     run.add_argument("--run-id", help="name for a new run (default: timestamp)")
     run.add_argument("--nli", action="store_true", help="add NLI citation-support metrics")

@@ -12,7 +12,7 @@ TERMINAL: frozenset[str] = frozenset({"completed", "failed"})
 
 class AskRequest(BaseModel):
     question: str = Field(min_length=5, max_length=2000)
-    provider: Literal["gemini", "ollama"] | None = Field(
+    provider: Literal["gemini", "ollama", "groq"] | None = Field(
         default=None, description="override LLM_PROVIDER for this job"
     )
     no_cache: bool = Field(default=False, description="skip the semantic cache lookup")

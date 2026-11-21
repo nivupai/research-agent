@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     ncbi_email: str | None = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    # Groq (OpenAI-compatible endpoint, see bioagent.llm.openai_compat); no default role uses it
+    groq_api_key: SecretStr | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_fast_model: str | None = None  # specialists; defaults to GROQ_MODEL
+    groq_base_url: str = "https://api.groq.com/openai/v1"
 
     # Sandboxed code execution (see bioagent.mcp_servers.sandbox)
     sandbox_image: str = "bioagent-sandbox:latest"
@@ -41,7 +46,7 @@ class Settings(BaseSettings):
 
     # LLMs (see bioagent.llm). Role models are "provider:model"; unset roles use the
     # defaults for LLM_PROVIDER (planner/synth: GEMINI_MODEL, specialists: GEMINI_FAST_MODEL).
-    llm_provider: Literal["gemini", "ollama"] = "gemini"
+    llm_provider: Literal["gemini", "ollama", "groq"] = "gemini"
     gemini_model: str = "gemini-3.5-flash"
     gemini_fast_model: str = "gemini-3.5-flash-lite"
     planner_model: str | None = None

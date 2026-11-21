@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     ask_p = sub.add_parser("ask", help="answer a question with cited evidence")
     ask_p.add_argument("question", nargs="?")
-    ask_p.add_argument("--provider", choices=["gemini", "ollama"])
+    ask_p.add_argument("--provider", choices=["gemini", "ollama", "groq"])
     ask_p.add_argument("--resume", metavar="RUN_ID", help="resume a failed or interrupted run")
     ask_p.add_argument("--json", action="store_true", help="print the run record as JSON")
     ask_p.add_argument("--no-verify", action="store_true", help="skip claim-level NLI verification")
