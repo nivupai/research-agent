@@ -1,9 +1,10 @@
 """Chat-model construction and a resilient invoke helper.
 
-Role models are configured as ``"provider:model"`` (e.g. ``gemini:gemini-3.5-flash`` or
-``ollama:qwen3:4b``). ``ainvoke_with_stats`` adds retries with backoff for free-tier 429s and
-transient 5xx errors, raises ``QuotaExhaustedError`` with a clear message when the daily
-quota is used up, and records tokens, latency and estimated cost.
+Role models are configured as ``"provider:model"`` (e.g. ``gemini:gemini-3.5-flash``,
+``ollama:qwen3:4b`` or ``groq:llama-3.3-70b-versatile``). ``ainvoke_with_stats`` adds retries
+with backoff for free-tier 429s and transient 5xx errors, raises ``QuotaExhaustedError`` with
+a clear message when the daily quota is used up, and records tokens, latency and estimated
+cost.
 """
 
 from __future__ import annotations
@@ -60,10 +61,13 @@ class RoleModels:
         return out | {"synth": str(self.synth)}
 
 
+PROVIDERS = ("gemini", "ollama", "groq")
+
+
 def parse_spec(spec: str) -> ModelSpec:
     provider, sep, model = spec.partition(":")
-    if not sep or provider not in ("gemini", "ollama") or not model:
-        raise ValueError(f"model spec must be 'gemini:<model>' or 'ollama:<model>', got {spec!r}")
+    if not sep or provider not in PROVIDERS or not model:
+        raise ValueError(f"model spec must be '<{'|'.join(PROVIDERS)}>:<model>', got {spec!r}")
     return ModelSpec(provider, model)
 
 
@@ -74,6 +78,10 @@ def role_specs(settings: Settings, provider: str | None = None) -> RoleModels:
     if chosen == "ollama":
         default = ModelSpec("ollama", settings.ollama_model)
         defaults = RoleModels(default, default, default)
+    elif chosen == "groq":
+        main = ModelSpec("groq", settings.groq_model)
+        fast = ModelSpec("groq", settings.groq_fast_model or settings.groq_model)
+        defaults = RoleModels(main, fast, main)
     elif chosen == "gemini":
         defaults = RoleModels(
             ModelSpec("gemini", settings.gemini_model),
@@ -119,6 +127,19 @@ def make_chat_model(spec: ModelSpec, settings: Settings) -> BaseChatModel:
             temperature=0.0,
             reasoning=False,  # qwen3: skip the thinking phase for tool loops
             num_ctx=16384,
+        )
+    if spec.provider == "groq":
+        from bioagent.llm.openai_compat import ChatOpenAICompat
+
+        if settings.groq_api_key is None:
+            raise LLMError("GROQ_API_KEY is not set (see .env.example)")
+        return ChatOpenAICompat(
+            model=spec.model,
+            api_key=settings.groq_api_key,
+            base_url=settings.groq_base_url,
+            temperature=0.0,
+            timeout=settings.llm_timeout_s,
+            provider_name="groq",
         )
     raise ValueError(f"unknown provider {spec.provider!r}")
 
@@ -171,7 +192,7 @@ async def ainvoke_with_stats(
             if kind == "quota":
                 raise QuotaExhaustedError(
                     f"{spec} quota exhausted (free-tier daily limit?). Wait for the quota to "
-                    "reset, use a different GEMINI_MODEL, or run with --provider ollama. "
+                    "reset, use a different model or provider (--provider ollama|groq). "
                     f"Provider said: {str(exc)[:300]}"
                 ) from exc
             if kind == "fatal" or retries >= max_retries:

@@ -104,6 +104,8 @@ def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> Ag
         synth_variant=settings.synth_variant,
         discovery_k=settings.discovery_k,
         discovery_min_evidence=settings.discovery_min_evidence,
+        drug_candidate_ranking=settings.drug_candidate_ranking,
+        target_evidence_screen=settings.target_evidence_screen,
     )
 
 

@@ -64,7 +64,10 @@ Open issues are marked **open**.
   fused AMPK run does retrieve the paper, but the answer still omits sorafenib, so the
   remaining gap is in the candidate selection: sorafenib ranks 41st of 50 mentioned drugs and
   is cut at the 20-candidate limit. Repeated 3x per question, fusion retrieves the paper every
-  time but changes no answer measure significantly, so it stays off.
+  time but changes no answer measure significantly, so it stays off. Ranking candidates by
+  the search rank of the papers that mention them (`DRUG_CANDIDATE_RANKING=paper_rank`) does
+  not help either: top-ranked reviews mention many drugs, and sorafenib stays 26th-45th.
+  The open problem is target-specific evidence per candidate, not ranking.
 * **Lesson**: do not rely on a small model to follow a multi-step search recipe; run the
   recipe in code and give the model the union.
 

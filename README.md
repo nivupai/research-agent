@@ -142,6 +142,9 @@ cp .env.example .env    # then fill in your keys (never commit .env)
 | `NCBI_EMAIL` | Contact email sent to NCBI with each request |
 | `OLLAMA_BASE_URL` | Defaults to `http://localhost:11434` |
 | `OLLAMA_MODEL` | Defaults to `qwen3:4b` |
+| `GROQ_API_KEY` | Optional; only needed for `--provider groq` / `groq:` role models |
+| `GROQ_MODEL` | Groq model for planner/synthesizer, default `llama-3.3-70b-versatile` |
+| `GROQ_FAST_MODEL` | Groq model for specialists; defaults to `GROQ_MODEL` |
 
 ## Literature MCP server
 
@@ -285,6 +288,7 @@ make test-neo4j      # integration tests against the local Neo4j (not run in CI)
 ```bash
 uv run bioagent ask "Which approved drugs act on the AMPK pathway, and is there evidence any could be repurposed for glioblastoma?"
 uv run bioagent ask "..." --provider ollama      # local qwen3:4b (ollama pull qwen3:4b)
+uv run bioagent ask "..." --provider groq        # Groq (needs GROQ_API_KEY)
 uv run bioagent ask --resume <run_id>            # continue a failed/interrupted run
 uv run bioagent ask "..." --json                 # full run record on stdout
 ```
@@ -332,11 +336,20 @@ to follow instructions inside them. Runs are checkpointed in `data/checkpoints.s
 (thread per run) and saved to `results/runs/<run_id>.json` with tokens, latency and
 list-price cost per call.
 
-Models: `LLM_PROVIDER` (gemini|ollama), `GEMINI_MODEL` (planner/synthesizer, default
+Models: `LLM_PROVIDER` (gemini|ollama|groq, default gemini), `GEMINI_MODEL` (planner/synthesizer, default
 `gemini-3.5-flash`), `GEMINI_FAST_MODEL` (specialists, default `gemini-3.5-flash-lite`),
 `OLLAMA_MODEL`, or per-role `PLANNER_MODEL` / `SPECIALIST_MODEL` / `SYNTH_MODEL` as
 `provider:model`; `LITERATURE_MODEL` / `CHEMISTRY_MODEL` / `ANALYSIS_MODEL` override the
-specialist model for one kind (ignored with `--provider`).
+specialist model for one kind (ignored with `--provider`). Roles can mix providers, e.g.
+`SPECIALIST_MODEL=groq:llama-3.1-8b-instant` with Gemini for the planner and synthesizer.
+
+Groq is called through its OpenAI-compatible endpoint (`GROQ_BASE_URL`, default
+`https://api.groq.com/openai/v1`) by a small httpx client (`bioagent.llm.openai_compat`) that
+supports tool calling and structured output; no extra package is needed. Groq's free tier
+limits tokens per minute and per day per model, so long synthesis prompts can hit the
+per-minute limit (retried with backoff) and a daily-limit 429 stops the run like a Gemini
+quota error. Cost is not estimated for Groq models (reported as unknown). The Groq path is
+covered by mocked tests only until it has been run live.
 
 The planner only adds chemistry/analysis tasks when the question asks for properties, BBB,
 drug-likeness or another computation. A literature task with `drug_target` (e.g. "which

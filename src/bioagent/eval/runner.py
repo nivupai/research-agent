@@ -76,6 +76,18 @@ class EvalConfig:
                 judge=spec,
                 **kw,
             )
+        if provider == "groq":
+            main = f"groq:{settings.groq_model}"
+            fast = f"groq:{settings.groq_fast_model or settings.groq_model}"
+            return cls(
+                suite=suite,
+                provider=provider,
+                planner=main,
+                specialist=fast,
+                synth=kw.pop("synth", main),
+                judge=main,
+                **kw,
+            )
         return cls(suite=suite, provider=provider, **kw)
 
     def agent_hash(self) -> str:
