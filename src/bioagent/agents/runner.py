@@ -26,6 +26,7 @@ from bioagent.llm.stats import summarize
 from bioagent.security.audit import AuditLog, audit, sha256, use_audit
 from bioagent.security.policy import ToolPolicy
 from bioagent.verify.backends import make_scorer, windowed
+from bioagent.verify.graph_check import GraphLookup, lookup_from_settings
 from bioagent.verify.verifier import ClaimVerifier, VerifyConfig
 
 RECURSION_LIMIT = 60
@@ -84,9 +85,16 @@ def build_claim_verifier(settings: Settings) -> ClaimVerifier | None:
     )
 
 
+def build_graph_lookup(settings: Settings) -> GraphLookup | None:
+    if settings.graph_claim_check != "on" or not settings.verify_claims:
+        return None
+    return lookup_from_settings(settings)
+
+
 def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> AgentDeps:
     return AgentDeps(
         claim_verifier=build_claim_verifier(settings),
+        graph_lookup=build_graph_lookup(settings),
         policy=ToolPolicy(TOOL_SCOPES) if settings.security_defenses else None,
         defenses=settings.security_defenses,
         planner=RoleModel(specs.planner, make_chat_model(specs.planner, settings)),
@@ -104,6 +112,8 @@ def build_deps(settings: Settings, specs: RoleModels, tools: ToolProvider) -> Ag
         synth_variant=settings.synth_variant,
         discovery_k=settings.discovery_k,
         discovery_min_evidence=settings.discovery_min_evidence,
+        drug_candidate_ranking=settings.drug_candidate_ranking,
+        target_evidence_screen=settings.target_evidence_screen,
     )
 
 

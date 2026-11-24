@@ -6,7 +6,7 @@ import asyncio
 import itertools
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -43,6 +43,7 @@ from bioagent.llm.stats import RunStatsCollector
 from bioagent.security.audit import args_digest, audit
 from bioagent.security.output import check_answer, redact_unknown_pmids
 from bioagent.security.policy import Decision, TaskContext, ToolPolicy
+from bioagent.verify.graph_check import GraphChecker, GraphLookup
 from bioagent.verify.text import (
     CITE_RE,
     ESTIMATE_RE,
@@ -82,11 +83,15 @@ class AgentDeps:
     synth_variant: str = "default"
     discovery_k: int = 15  # = DISCOVERY_K (defined below)
     discovery_min_evidence: int = 2
+    drug_candidate_ranking: str = "count"
+    target_evidence_screen: str = "off"
     sleep: Callable[[float], Awaitable[None]] | None = None
     # Per-specialist model overrides (e.g. a stronger model for literature only).
     specialists: dict[str, RoleModel] = field(default_factory=dict)
     # Claim-level verification (NLI); None keeps only the citation checks.
     claim_verifier: ClaimVerifier | None = None
+    # GRAPH_CLAIM_CHECK=on: drug->target relations used before NLI (verify.graph_check)
+    graph_lookup: GraphLookup | None = None
     # Prompt-injection defences (SECURITY_DEFENSES): tool-argument policy and output checks.
     policy: ToolPolicy | None = None
     defenses: bool = False
@@ -312,12 +317,40 @@ async def _run_tool(
     return result
 
 
+PAPER_RANK_K = 10  # reciprocal-rank constant for DRUG_CANDIDATE_RANKING=paper_rank
+
+
+def hit_ranks(results: Sequence[Mapping[str, Any]]) -> dict[str, int]:
+    """Best (lowest, 1-based) rank of each PMID across several search_corpus results."""
+    best: dict[str, int] = {}
+    for result in results:
+        pmids = list(dict.fromkeys(str(h["pmid"]) for h in result.get("hits", [])))
+        for rank, pmid in enumerate(pmids, start=1):
+            best[pmid] = min(best.get(pmid, rank), rank)
+    return best
+
+
 def merge_candidates(
     graph_result: Mapping[str, Any],
     mentioned_result: Mapping[str, Any],
     approved_only: bool = False,
+    ranking: str = "count",
+    paper_ranks: Mapping[str, int] | None = None,
+    evidence: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Union of graph drugs_targeting hits and drugs annotated in the corpus hits."""
+    """Union of graph drugs_targeting hits and drugs annotated in the corpus hits.
+
+    ``ranking="count"`` (default) orders corpus-only candidates by how many retrieved papers
+    mention them. ``ranking="paper_rank"`` orders them by the summed reciprocal rank
+    (1 / (PAPER_RANK_K + rank)) of the retrieved papers that mention them, using
+    ``paper_ranks`` (best search rank per PMID), so a drug named in a top-ranked paper is
+    not crowded out by entities that are merely mentioned often. The cap is the same.
+
+    ``evidence`` (TARGET_EVIDENCE_SCREEN=sentence; drug id -> evidence_screen.Evidence) moves
+    corpus-only candidates with a drug+target+action sentence ahead of the other corpus-only
+    candidates, by best search rank; graph-sourced candidates keep their places and the cap
+    is unchanged. Kept candidates carry the sentence and its PMID.
+    """
     merged: dict[str, dict[str, Any]] = {}
     for item in graph_result.get("results", []):
         drug = item["drug"]
@@ -339,6 +372,12 @@ def merge_candidates(
         )  # fmt: skip
         entry["sources"].add("corpus")
         entry["corpus_papers"] = int(drug.get("papers_in_query") or 0)
+        if evidence is not None and str(drug["id"]) in evidence:
+            ev = evidence[str(drug["id"])]
+            entry["evidence"] = {"pmid": ev.pmid, "rank": ev.rank, "sentence": ev.sentence}
+        if ranking == "paper_rank" and paper_ranks:
+            ranks = [paper_ranks[str(p)] for p in drug.get("pmids", []) if str(p) in paper_ranks]
+            entry["paper_score"] = round(sum(1 / (PAPER_RANK_K + r) for r in ranks), 6)
 
     def weight(e: dict[str, Any]) -> int:
         return -(int(e["corpus_papers"]) + int(e["graph_evidence"]))
@@ -346,7 +385,19 @@ def merge_candidates(
     both = sorted((e for e in merged.values() if len(e["sources"]) > 1), key=weight)
     graph_only = sorted((e for e in merged.values() if e["sources"] != {"corpus"}
                          and len(e["sources"]) == 1), key=weight)  # fmt: skip
-    corpus_only = sorted((e for e in merged.values() if e["sources"] == {"corpus"}), key=weight)
+
+    def corpus_key(e: dict[str, Any]) -> tuple[float, int]:
+        return (-float(e.get("paper_score", 0.0)), weight(e))
+
+    corpus_only = sorted(
+        (e for e in merged.values() if e["sources"] == {"corpus"}),
+        key=corpus_key if ranking == "paper_rank" else weight,
+    )
+    if evidence is not None:  # stable: evidence first (by rank), the rest keep their order
+        corpus_only = sorted(
+            corpus_only,
+            key=lambda e: (0, e["evidence"]["rank"]) if "evidence" in e else (1, 0),
+        )
     ranked = both + [
         e for pair in itertools.zip_longest(graph_only, corpus_only) for e in pair if e
     ]
@@ -359,6 +410,8 @@ async def discover_drugs(
     stats: RunStatsCollector,
     k: int = DISCOVERY_K,
     min_evidence: int = 2,
+    ranking: str = "count",
+    evidence_screen: str = "off",
 ) -> Discovery:
     """Always run drugs_targeting plus the discovery corpus searches for a drug_target task.
 
@@ -403,8 +456,20 @@ async def discover_drugs(
             wrap_untrusted(render_for_model(name, result, items), source=name, ref=task.id)
         )
     graph_result = results[0] if "error" not in results[0] else {}
+    searches = [r for (n, _), r in zip(calls, results, strict=False) if n == "search_corpus"]
+    mentioned_ok = mentioned if "error" not in mentioned else {}
+    screened = None
+    if evidence_screen == "sentence":
+        from bioagent.agents.evidence_screen import find_evidence
+
+        screened = find_evidence(mentioned_ok.get("drugs", []), searches, target)
     candidates = merge_candidates(
-        graph_result, mentioned if "error" not in mentioned else {}, task.approved_only
+        graph_result,
+        mentioned_ok,
+        task.approved_only,
+        ranking=ranking,
+        paper_ranks=hit_ranks(searches) if ranking == "paper_rank" else None,
+        evidence=screened,
     )
     listing = "; ".join(
         f"{c['name']} ({'+'.join(c['sources'])}"
@@ -414,6 +479,11 @@ async def discover_drugs(
             else ", drug class or phase unknown"
         )
         + ")"
+        + (
+            f' evidence (PMID {c["evidence"]["pmid"]}): "{c["evidence"]["sentence"]}"'
+            if "evidence" in c
+            else ""
+        )
         for c in candidates
     )
     summary = f"Candidate drugs for {target} (graph + corpus union): {listing or 'none found'}"
@@ -456,7 +526,13 @@ def make_specialist(
         discovery: Discovery | None = None
         if kind == "literature" and task.drug_target and set(tools) >= DISCOVERY_TOOLS:
             discovery = await discover_drugs(
-                task, tools, stats, deps.discovery_k, deps.discovery_min_evidence
+                task,
+                tools,
+                stats,
+                deps.discovery_k,
+                deps.discovery_min_evidence,
+                deps.drug_candidate_ranking,
+                deps.target_evidence_screen,
             )
             evidence.update(discovery.evidence)
             ctx.observe(discovery.prompt)
@@ -746,6 +822,26 @@ async def verifier(state: AgentState) -> dict[str, Any]:
     }
 
 
+async def graph_checker(
+    lookup: GraphLookup | None, plan: Sequence[Mapping[str, Any]]
+) -> tuple[GraphChecker | None, str | None]:
+    """The graph check for the plan's drug-target question (first drug_target task), or None.
+
+    Returns (checker, status override): a failed graph lookup leaves NLI-only verification.
+    """
+    if lookup is None:
+        return None, None
+    target = next((str(t["drug_target"]) for t in plan if t.get("drug_target")), None)
+    if target is None:
+        return None, "on (no drug-target task)"
+    try:
+        drugs = await lookup.drugs_for_target(target)
+    except Exception as exc:
+        audit("graph_claim_check_error", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        return None, "error (graph unavailable; NLI only)"
+    return GraphChecker(drugs, target), None
+
+
 def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, Any]]]:
     async def verify(state: AgentState) -> dict[str, Any]:
         update = await verify_claims(state)
@@ -792,9 +888,12 @@ def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str,
             parsed = out.get("parsed") if isinstance(out, dict) else out
             return parsed if isinstance(parsed, schema) else None
 
+        graph, graph_status = await graph_checker(deps.graph_lookup, state.get("plan", []))
         result = await deps.claim_verifier.verify(
-            answer, citations, state.get("evidence", {}), call=call
+            answer, citations, state.get("evidence", {}), call=call, graph=graph
         )
+        if graph_status:
+            result["report"]["graph_claim_check"] = graph_status
         return {
             "answer": result["answer"],
             "citations": result["citations"],

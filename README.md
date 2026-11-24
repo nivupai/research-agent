@@ -142,6 +142,9 @@ cp .env.example .env    # then fill in your keys (never commit .env)
 | `NCBI_EMAIL` | Contact email sent to NCBI with each request |
 | `OLLAMA_BASE_URL` | Defaults to `http://localhost:11434` |
 | `OLLAMA_MODEL` | Defaults to `qwen3:4b` |
+| `GROQ_API_KEY` | Optional; only needed for `--provider groq` / `groq:` role models |
+| `GROQ_MODEL` | Groq model for planner/synthesizer, default `llama-3.3-70b-versatile` |
+| `GROQ_FAST_MODEL` | Groq model for specialists; defaults to `GROQ_MODEL` |
 
 ## Literature MCP server
 
@@ -285,6 +288,7 @@ make test-neo4j      # integration tests against the local Neo4j (not run in CI)
 ```bash
 uv run bioagent ask "Which approved drugs act on the AMPK pathway, and is there evidence any could be repurposed for glioblastoma?"
 uv run bioagent ask "..." --provider ollama      # local qwen3:4b (ollama pull qwen3:4b)
+uv run bioagent ask "..." --provider groq        # Groq (needs GROQ_API_KEY)
 uv run bioagent ask --resume <run_id>            # continue a failed/interrupted run
 uv run bioagent ask "..." --json                 # full run record on stdout
 ```
@@ -316,6 +320,7 @@ splits them into atomic claims that keep their `[n]` citations. Each claim is la
 | `not_supported` | neither, no resolvable citation, or computed numbers that do not match |
 | `computed` | cites an RDKit/sandbox result and every number matches the tool output |
 | `absence` | an explicit "nothing was found" claim an LLM judged consistent with all retrieved evidence (weaker; not counted) |
+| `graph` | only with `GRAPH_CLAIM_CHECK=on`: a claim naming a drug and the question's target that the knowledge graph links (ChEMBL `TARGETS`, or a PubTator action relation with at least `DISCOVERY_MIN_EVIDENCE` papers); skips NLI |
 
 NLI runs locally with `NLI_MODEL` (default
 `MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, ~1.7 GB, needs the `models`
@@ -323,8 +328,11 @@ extra; MPS/CUDA/CPU via `NLI_DEVICE`). Passages are split into 3-sentence window
 best window counts. With `VERIFY_POLICY=remove` (default) sentences whose claims all fail
 are removed and partly failing ones get `[unverified]`; `flag` only marks them. Citations
 are renumbered afterwards and the synthesizer's text is kept as `draft_answer`.
-Groundedness = (supported + computed) / (supported + computed + contradicted +
-not_supported). The CLI prints the claim table; run stats gain `groundedness`, `claims`,
+Groundedness = (supported + computed + graph) / (supported + computed + graph + contradicted
++ not_supported). With `GRAPH_CLAIM_CHECK=on` (default off; `bioagent.verify.graph_check`)
+sentences holding a graph-verified claim are never removed (only flagged if another claim in
+them fails), and the report's `sentence_paths` says which check decided each sentence
+(graph, nli, computed, absence, mixed). The CLI prints the claim table; run stats gain `groundedness`, `claims`,
 `removed_claims` and `verify_seconds`. `bioagent ask ... --no-verify` turns it off.
 
 All retrieved text is wrapped in `<<<UNTRUSTED_DATA>>>` blocks and the models are told never
@@ -332,11 +340,20 @@ to follow instructions inside them. Runs are checkpointed in `data/checkpoints.s
 (thread per run) and saved to `results/runs/<run_id>.json` with tokens, latency and
 list-price cost per call.
 
-Models: `LLM_PROVIDER` (gemini|ollama), `GEMINI_MODEL` (planner/synthesizer, default
+Models: `LLM_PROVIDER` (gemini|ollama|groq, default gemini), `GEMINI_MODEL` (planner/synthesizer, default
 `gemini-3.5-flash`), `GEMINI_FAST_MODEL` (specialists, default `gemini-3.5-flash-lite`),
 `OLLAMA_MODEL`, or per-role `PLANNER_MODEL` / `SPECIALIST_MODEL` / `SYNTH_MODEL` as
 `provider:model`; `LITERATURE_MODEL` / `CHEMISTRY_MODEL` / `ANALYSIS_MODEL` override the
-specialist model for one kind (ignored with `--provider`).
+specialist model for one kind (ignored with `--provider`). Roles can mix providers, e.g.
+`SPECIALIST_MODEL=groq:llama-3.1-8b-instant` with Gemini for the planner and synthesizer.
+
+Groq is called through its OpenAI-compatible endpoint (`GROQ_BASE_URL`, default
+`https://api.groq.com/openai/v1`) by a small httpx client (`bioagent.llm.openai_compat`) that
+supports tool calling and structured output; no extra package is needed. Groq's free tier
+limits tokens per minute and per day per model, so long synthesis prompts can hit the
+per-minute limit (retried with backoff) and a daily-limit 429 stops the run like a Gemini
+quota error. Cost is not estimated for Groq models (reported as unknown). The Groq path is
+covered by mocked tests only until it has been run live.
 
 The planner only adds chemistry/analysis tasks when the question asks for properties, BBB,
 drug-likeness or another computation. A literature task with `drug_target` (e.g. "which

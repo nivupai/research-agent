@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     ncbi_email: str | None = None
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "qwen3:4b"
+    # Groq (OpenAI-compatible endpoint, see bioagent.llm.openai_compat); no default role uses it
+    groq_api_key: SecretStr | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+    groq_fast_model: str | None = None  # specialists; defaults to GROQ_MODEL
+    groq_base_url: str = "https://api.groq.com/openai/v1"
 
     # Sandboxed code execution (see bioagent.mcp_servers.sandbox)
     sandbox_image: str = "bioagent-sandbox:latest"
@@ -41,7 +46,7 @@ class Settings(BaseSettings):
 
     # LLMs (see bioagent.llm). Role models are "provider:model"; unset roles use the
     # defaults for LLM_PROVIDER (planner/synth: GEMINI_MODEL, specialists: GEMINI_FAST_MODEL).
-    llm_provider: Literal["gemini", "ollama"] = "gemini"
+    llm_provider: Literal["gemini", "ollama", "groq"] = "gemini"
     gemini_model: str = "gemini-3.5-flash"
     gemini_fast_model: str = "gemini-3.5-flash-lite"
     planner_model: str | None = None
@@ -51,6 +56,12 @@ class Settings(BaseSettings):
     # Drug discovery (repurposing tasks): corpus hits kept per search, graph evidence floor.
     discovery_k: int = 15
     discovery_min_evidence: int = 2
+    # count: corpus-only drug candidates by number of retrieved papers mentioning them;
+    # paper_rank: by the search rank of those papers (see agents.nodes.merge_candidates)
+    drug_candidate_ranking: Literal["count", "paper_rank"] = "count"
+    # sentence: corpus candidates with a drug+target+action sentence in the retrieved passages
+    # go first and the prompt shows that sentence (agents.evidence_screen); off: unchanged
+    target_evidence_screen: Literal["off", "sentence"] = "off"
     # hybrid_rerank: fuse the reranker order with the BM25 order (RRF) instead of rerank only
     rerank_fusion: bool = False
     # Per-specialist overrides of SPECIALIST_MODEL, e.g. LITERATURE_MODEL=gemini:gemini-3.5-flash
@@ -74,6 +85,9 @@ class Settings(BaseSettings):
     nli_entail_threshold: float = 0.5
     nli_contradiction_threshold: float = 0.5
     verify_policy: Literal["remove", "flag"] = "remove"
+    # on: before NLI, drug-target claims whose drug->target relation is in the knowledge graph
+    # are graph-verified and never removed (verify.graph_check); off: NLI only
+    graph_claim_check: Literal["off", "on"] = "off"
     # Claim scorer: nli (DeBERTa), small_lora (fine-tuned classifier), llm (Gemini) or router
     # (small model, escalating low-confidence pairs to the LLM); see bioagent.verify.backends
     verifier_backend: Literal["nli", "small_lora", "llm", "router"] = "nli"
