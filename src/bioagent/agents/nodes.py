@@ -43,6 +43,7 @@ from bioagent.llm.stats import RunStatsCollector
 from bioagent.security.audit import args_digest, audit
 from bioagent.security.output import check_answer, redact_unknown_pmids
 from bioagent.security.policy import Decision, TaskContext, ToolPolicy
+from bioagent.verify.graph_check import GraphChecker, GraphLookup
 from bioagent.verify.text import (
     CITE_RE,
     ESTIMATE_RE,
@@ -89,6 +90,8 @@ class AgentDeps:
     specialists: dict[str, RoleModel] = field(default_factory=dict)
     # Claim-level verification (NLI); None keeps only the citation checks.
     claim_verifier: ClaimVerifier | None = None
+    # GRAPH_CLAIM_CHECK=on: drug->target relations used before NLI (verify.graph_check)
+    graph_lookup: GraphLookup | None = None
     # Prompt-injection defences (SECURITY_DEFENSES): tool-argument policy and output checks.
     policy: ToolPolicy | None = None
     defenses: bool = False
@@ -819,6 +822,26 @@ async def verifier(state: AgentState) -> dict[str, Any]:
     }
 
 
+async def graph_checker(
+    lookup: GraphLookup | None, plan: Sequence[Mapping[str, Any]]
+) -> tuple[GraphChecker | None, str | None]:
+    """The graph check for the plan's drug-target question (first drug_target task), or None.
+
+    Returns (checker, status override): a failed graph lookup leaves NLI-only verification.
+    """
+    if lookup is None:
+        return None, None
+    target = next((str(t["drug_target"]) for t in plan if t.get("drug_target")), None)
+    if target is None:
+        return None, "on (no drug-target task)"
+    try:
+        drugs = await lookup.drugs_for_target(target)
+    except Exception as exc:
+        audit("graph_claim_check_error", error=f"{type(exc).__name__}: {str(exc)[:200]}")
+        return None, "error (graph unavailable; NLI only)"
+    return GraphChecker(drugs, target), None
+
+
 def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str, Any]]]:
     async def verify(state: AgentState) -> dict[str, Any]:
         update = await verify_claims(state)
@@ -865,9 +888,12 @@ def make_verifier(deps: AgentDeps) -> Callable[[AgentState], Awaitable[dict[str,
             parsed = out.get("parsed") if isinstance(out, dict) else out
             return parsed if isinstance(parsed, schema) else None
 
+        graph, graph_status = await graph_checker(deps.graph_lookup, state.get("plan", []))
         result = await deps.claim_verifier.verify(
-            answer, citations, state.get("evidence", {}), call=call
+            answer, citations, state.get("evidence", {}), call=call, graph=graph
         )
+        if graph_status:
+            result["report"]["graph_claim_check"] = graph_status
         return {
             "answer": result["answer"],
             "citations": result["citations"],

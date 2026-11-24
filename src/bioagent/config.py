@@ -85,6 +85,9 @@ class Settings(BaseSettings):
     nli_entail_threshold: float = 0.5
     nli_contradiction_threshold: float = 0.5
     verify_policy: Literal["remove", "flag"] = "remove"
+    # on: before NLI, drug-target claims whose drug->target relation is in the knowledge graph
+    # are graph-verified and never removed (verify.graph_check); off: NLI only
+    graph_claim_check: Literal["off", "on"] = "off"
     # Claim scorer: nli (DeBERTa), small_lora (fine-tuned classifier), llm (Gemini) or router
     # (small model, escalating low-confidence pairs to the LLM); see bioagent.verify.backends
     verifier_backend: Literal["nli", "small_lora", "llm", "router"] = "nli"

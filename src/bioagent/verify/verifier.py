@@ -11,16 +11,20 @@
    judged consistent with the retrieved evidence; weaker, reported separately).
 4. Policy: sentences whose claims all failed are removed ("remove") or marked ("flag");
    sentences with some failed claims are marked. Citations are renumbered afterwards.
+5. Optional graph check (``GRAPH_CLAIM_CHECK=on``, see ``verify.graph_check``): before NLI,
+   claims naming a drug and the question's target that the knowledge graph links (drug ->
+   target relation) are labelled ``graph`` and skip NLI; their sentences are never removed.
+   ``sentence_paths`` records which check decided each sentence.
 
-Groundedness = (supported + computed) / (supported + computed + contradicted +
-not_supported); absence claims are not counted.
+Groundedness = (supported + computed + graph) / (supported + computed + graph + contradicted
++ not_supported); absence claims are not counted.
 """
 
 from __future__ import annotations
 
 import re
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
@@ -31,6 +35,7 @@ from pydantic import BaseModel, Field
 from bioagent.agents.state import Citation, Evidence
 from bioagent.agents.untrusted import UNTRUSTED_RULES, wrap_untrusted
 from bioagent.verify.computed import check_numbers
+from bioagent.verify.graph_check import GraphChecker
 from bioagent.verify.nli import NLIScorer, NLIScores, passage_windows
 from bioagent.verify.text import (
     CITE_RE,
@@ -41,9 +46,17 @@ from bioagent.verify.text import (
     rewrite_answer,
 )
 
-Label = Literal["supported", "contradicted", "not_supported", "computed", "absence"]
+Label = Literal["supported", "contradicted", "not_supported", "computed", "absence", "graph"]
 FAILED: frozenset[str] = frozenset({"contradicted", "not_supported"})
-GROUNDED: frozenset[str] = frozenset({"supported", "computed"})
+GROUNDED: frozenset[str] = frozenset({"supported", "computed", "graph"})
+LABELS: tuple[str, ...] = (
+    "supported",
+    "computed",
+    "graph",
+    "contradicted",
+    "not_supported",
+    "absence",
+)
 Policy = Literal["remove", "flag"]
 MAX_CLAIMS = 60
 MAX_ABSENCE_TITLES = 60
@@ -214,12 +227,14 @@ class ClaimVerifier:
         evidence: Mapping[str, Evidence],
         *,
         call: StructuredCall | None = None,
+        graph: GraphChecker | None = None,
     ) -> dict[str, Any]:
         started = time.monotonic()
         sentences = answer_sentences(answer)
         by_n = {c["n"]: c for c in citations}
         extracted, method = await self.extract(sentences, call)
         claims = normalise_claims(extracted, sentences, set(by_n))
+        graph_sentences = apply_graph_check(claims, sentences, graph)
 
         cited: dict[int, Evidence] = {
             n: evidence[c["key"]] for n, c in by_n.items() if c["key"] in evidence
@@ -240,7 +255,7 @@ class ClaimVerifier:
         slots: list[tuple[Claim, int, str]] = []  # (claim, citation n, window)
         pending_nli: list[Claim] = []
         for claim in claims:
-            if claim.kind == "absence":
+            if claim.kind == "absence" or claim.label == "graph":
                 continue
             items = {n: cited[n] for n in claim.citations if n in cited}
             if not items:
@@ -322,12 +337,12 @@ class ClaimVerifier:
         await self._check_absence(claims, evidence, call)
         nli_seconds = time.monotonic() - started
 
-        new_answer, kept, removed, flagged = self.apply_policy(answer, claims, citations)
-        counts = {label: sum(1 for c in claims if c.label == label) for label in (
-            "supported", "computed", "contradicted", "not_supported", "absence")}  # fmt: skip
-        checkable = sum(counts[k] for k in ("supported", "computed", "contradicted",
-                                            "not_supported"))  # fmt: skip
-        grounded = counts["supported"] + counts["computed"]
+        new_answer, kept, removed, flagged = self.apply_policy(
+            answer, claims, citations, keep=graph_sentences
+        )
+        counts = {label: sum(1 for c in claims if c.label == label) for label in LABELS}
+        checkable = sum(v for k, v in counts.items() if k != "absence")
+        grounded = sum(counts[k] for k in GROUNDED)
         removed_claims = [c.row() for c in claims if c.sentence in removed and c.label in FAILED]
         return {
             "answer": new_answer,
@@ -347,6 +362,9 @@ class ClaimVerifier:
                 "entail_threshold": cfg.entail_threshold,
                 "contradiction_threshold": cfg.contradiction_threshold,
                 "seconds": round(nli_seconds, 2),
+                "graph_claim_check": "on" if graph is not None else "off",
+                "sentence_paths": sentence_paths(claims),
+                "graph_sentences": sorted(graph_sentences),
             },
         }
 
@@ -382,8 +400,13 @@ class ClaimVerifier:
                 claim.label, claim.check = "absence", f"supported by absence (LLM): {reason}"
 
     def apply_policy(
-        self, answer: str, claims: Sequence[Claim], citations: Sequence[Citation]
+        self,
+        answer: str,
+        claims: Sequence[Claim],
+        citations: Sequence[Citation],
+        keep: Collection[int] = (),
     ) -> tuple[str, list[Citation], set[int], set[int]]:
+        """``keep``: sentences that are flagged instead of removed (graph-verified ones)."""
         by_sentence: dict[int, list[Claim]] = {}
         for c in claims:
             by_sentence.setdefault(c.sentence, []).append(c)
@@ -393,7 +416,7 @@ class ClaimVerifier:
             failed = [c for c in items if c.label in FAILED]
             if not failed:
                 continue
-            if len(failed) == len(items) and self.config.policy == "remove":
+            if len(failed) == len(items) and self.config.policy == "remove" and sid not in keep:
                 removed.add(sid)
             else:
                 flagged.add(sid)
@@ -402,3 +425,40 @@ class ClaimVerifier:
         rewritten = rewrite_answer(answer, removed, flagged)
         text, kept = renumber_citations(rewritten, [dict(c) for c in citations])
         return text, [Citation(**c) for c in kept], removed, flagged  # type: ignore[typeddict-item]
+
+
+def apply_graph_check(
+    claims: Sequence[Claim], sentences: Sequence[AnswerSentence], graph: GraphChecker | None
+) -> set[int]:
+    """Label claims the graph verifies (drug + target named, relation in the graph).
+
+    Returns the ids of sentences with at least one graph-verified claim.
+    """
+    if graph is None:
+        return set()
+    matches = graph.match([(s.id, _strip_markers(s.text)) for s in sentences])
+    verified: set[int] = set()
+    for claim in claims:
+        match = matches.get(claim.sentence)
+        if match is None or claim.kind == "absence" or not graph.names_target(claim.text):
+            continue
+        named = {d.id for d in graph.drugs_named(claim.text)}
+        relations = [d.best() for d in match.drugs if d.id in named]
+        if not relations:
+            continue
+        claim.label = "graph"
+        claim.check = "; ".join(r.describe() for r in relations)
+        claim.evidence = [r.row() for r in relations]
+        verified.add(claim.sentence)
+    return verified
+
+
+def sentence_paths(claims: Sequence[Claim]) -> dict[str, str]:
+    """Sentence id -> which check decided it: graph, nli, computed, absence or mixed."""
+    paths: dict[int, set[str]] = {}
+    for c in claims:
+        path = {"graph": "graph", "computed": "computed", "absence": "absence"}.get(c.label, "nli")
+        if c.label == "not_supported" and not c.evidence:
+            path = "no_citation"
+        paths.setdefault(c.sentence, set()).add(path)
+    return {str(sid): next(iter(p)) if len(p) == 1 else "mixed" for sid, p in sorted(paths.items())}

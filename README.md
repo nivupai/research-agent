@@ -320,6 +320,7 @@ splits them into atomic claims that keep their `[n]` citations. Each claim is la
 | `not_supported` | neither, no resolvable citation, or computed numbers that do not match |
 | `computed` | cites an RDKit/sandbox result and every number matches the tool output |
 | `absence` | an explicit "nothing was found" claim an LLM judged consistent with all retrieved evidence (weaker; not counted) |
+| `graph` | only with `GRAPH_CLAIM_CHECK=on`: a claim naming a drug and the question's target that the knowledge graph links (ChEMBL `TARGETS`, or a PubTator action relation with at least `DISCOVERY_MIN_EVIDENCE` papers); skips NLI |
 
 NLI runs locally with `NLI_MODEL` (default
 `MoritzLaurer/DeBERTa-v3-large-mnli-fever-anli-ling-wanli`, ~1.7 GB, needs the `models`
@@ -327,8 +328,11 @@ extra; MPS/CUDA/CPU via `NLI_DEVICE`). Passages are split into 3-sentence window
 best window counts. With `VERIFY_POLICY=remove` (default) sentences whose claims all fail
 are removed and partly failing ones get `[unverified]`; `flag` only marks them. Citations
 are renumbered afterwards and the synthesizer's text is kept as `draft_answer`.
-Groundedness = (supported + computed) / (supported + computed + contradicted +
-not_supported). The CLI prints the claim table; run stats gain `groundedness`, `claims`,
+Groundedness = (supported + computed + graph) / (supported + computed + graph + contradicted
++ not_supported). With `GRAPH_CLAIM_CHECK=on` (default off; `bioagent.verify.graph_check`)
+sentences holding a graph-verified claim are never removed (only flagged if another claim in
+them fails), and the report's `sentence_paths` says which check decided each sentence
+(graph, nli, computed, absence, mixed). The CLI prints the claim table; run stats gain `groundedness`, `claims`,
 `removed_claims` and `verify_seconds`. `bioagent ask ... --no-verify` turns it off.
 
 All retrieved text is wrapped in `<<<UNTRUSTED_DATA>>>` blocks and the models are told never
