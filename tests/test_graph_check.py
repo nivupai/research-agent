@@ -215,3 +215,20 @@ def test_relation_row_shape() -> None:
 @pytest.mark.parametrize("target", ["mTOR", "EGFR"])
 def test_unknown_drugs_never_match(target: str) -> None:
     assert GraphChecker([], target).match([(1, f"Metformin inhibits {target}.")]) == {}
+
+
+@pytest.mark.parametrize(
+    ("target", "gene", "text"),
+    [
+        ("HDAC", "HDAC1", "Vorinostat inhibits HDACs."),
+        ("PARP", "PARP1", "Olaparib is a PARP inhibitor."),
+        ("VEGFR", "KDR", "Axitinib blocks VEGFR2."),
+        ("COX-2", "PTGS2", "Celecoxib inhibits cyclooxygenase-2."),
+    ],
+)
+async def test_target_families(target: str, gene: str, text: str) -> None:
+    rows = [{"id": "D1", "name": text.split()[0], "type": "TARGETS", "gene": gene}]
+    store = FakeStore(rows)
+    found = await lookup(store).drugs_for_target(target)
+    assert gene in store.calls[0]["symbols"]
+    assert set(GraphChecker(found, target).match([(1, text)])) == {1}

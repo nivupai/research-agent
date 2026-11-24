@@ -124,6 +124,7 @@ def score_run(
         "flagged_frac": len(verification.get("flagged_sentences") or []) / checked
         if checked
         else 0.0,
+        "graph_frac": len(verification.get("graph_sentences") or []) / checked if checked else 0.0,
         "groundedness": (record.get("verification") or {}).get("groundedness"),
         "references": len(record.get("citations", [])),
         "seconds": stats.get("wall_seconds"),
@@ -164,6 +165,7 @@ def main() -> None:
         "flagged_non_gold",
         "removed_frac",
         "flagged_frac",
+        "graph_frac",
         "groundedness",
         "references",
         "seconds",

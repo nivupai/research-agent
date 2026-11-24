@@ -104,7 +104,35 @@ class ReadStore(Protocol):
 StoreFactory = Callable[[], AbstractAsyncContextManager[ReadStore]]
 
 
+# Target families the alias groups in kg.aliases do not cover; without them "PARP" or
+# "COX-2" resolve to no gene (or the wrong one) and the check could never fire. Local to
+# this check: discovery's drugs_targeting is unchanged.
+FAMILIES: dict[str, tuple[tuple[str, ...], tuple[str, ...]]] = {
+    # key: (gene symbols, extra text terms)
+    "HDAC": (
+        tuple(f"HDAC{i}" for i in range(1, 12)),
+        ("histone deacetylase", "histone deacetylases"),
+    ),
+    "PARP": (("PARP1", "PARP2", "PARP3"), ("poly(ADP-ribose) polymerase", "PARP-1", "PARP-2")),
+    "VEGFR": (
+        ("KDR", "FLT1", "FLT4"),
+        ("VEGF receptor", "VEGF receptors", "VEGFR-1", "VEGFR-2", "VEGFR-3", "VEGFR1",
+         "VEGFR2", "VEGFR3", "VEGFRs"),
+    ),
+    "COX-2": (("PTGS2",), ("COX2", "cyclooxygenase-2", "cyclooxygenase 2", "COX 2")),
+    "EGFR": (("EGFR",), ("epidermal growth factor receptor", "ErbB1", "HER1")),
+}  # fmt: skip
+
+
+def _family(target: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    key = " ".join(target.strip().upper().split())
+    return next((v for k, v in FAMILIES.items() if k.upper() == key), None)
+
+
 def target_symbols(target: str) -> list[str]:
+    family = _family(target)
+    if family is not None:
+        return list(family[0])
     return expand_gene_query(target)[1]
 
 
@@ -172,7 +200,16 @@ def _pattern(terms: Iterable[str]) -> re.Pattern[str] | None:
 def target_pattern(target: str) -> re.Pattern[str] | None:
     from bioagent.agents.evidence_screen import target_terms
 
-    return _pattern(target_terms(target))
+    terms = set(target_terms(target))
+    family = _family(target)
+    if family is not None:
+        terms.update(family[0])
+        terms.update(family[1])
+    parts = [re.escape(t) for t in sorted(terms, key=len, reverse=True) if t]
+    if not parts:
+        return None
+    # plural forms ("HDACs", "PARPs") count as the target
+    return re.compile(r"(?<![\w-])(?:" + "|".join(parts) + r")s?(?![\w-])", re.I)
 
 
 @dataclass(frozen=True)
